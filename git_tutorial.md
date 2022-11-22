@@ -1,7 +1,8 @@
 # Steps to use `git`.
 
+## From add to push
 
-## 1. Show the current status of git
+### 1. Show the current status of git
 It is a good idea to do this as often as possible, so that you know what is happening inside your directory.
 ```
 git status
@@ -21,7 +22,7 @@ nothing added to commit but untracked files present (use "git add" to track)
 ```
 
 
-## 2. Adding files to the staging area
+### 2. Adding files to the staging area
 This tells git that you want put these files for a commit. It means that git now tracks this file.
 
 You can add just a single file:
@@ -45,7 +46,7 @@ Changes to be committed:
         new file:   git_tutorial.md
 ```
 
-## 3. Committing changes
+### 3. Committing changes
 Once you have added your changes, you can make a **commit**. A commit is **immutable** and is identified with a unique hash. 
 
 **Important**: You should make small commits often, instead of big commits rarely.
@@ -67,7 +68,7 @@ git commit -m "Adding a small tutorial for git"
 **Important**: Make sure to type a commit message that describes your changes.
 
 
-## 4. Push changes
+### 4. Push changes
 Now that the changes are committed, they just exist locally on your machine. But we want others to see the changes as well! So we need to push.
 
 To push
@@ -87,5 +88,48 @@ To github.com:Gianlufrez/ADM_HW4.git
    350b8c3..6dd4388  main -> main
 ```
 
+## Branches
+A branch is like a separate timeline of the repository that you can work on without affecting the work on other branches.
+
+### 1. How to switch to an existing branch
+Use the `checkout` command:
+```
+git checkout <branch name>
+```
+
+### 2. View the local branches
+
+```
+git branch
+```
+
+Example output:
+```
+1.1-set-up-data 
+* main
+```
+
+The `*` shows the current branch you are on.
+
+### 3. View the remote branches
+Using the `-r` flag shows the remote branches as well.
+
+```
+git branch -r
+```
+
+Example output
+```
+origin/1.1-set-up-data
+origin/HEAD -> origin/main
+origin/main
+```
 
 
+### 4. Create a new branch
+To create a new local branch:
+```
+git checkout -b <branch name>
+```
+
+This creates a new branch and switches to it.
