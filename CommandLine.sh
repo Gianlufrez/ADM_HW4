@@ -41,3 +41,9 @@ fi
 
 printf -- '-%.0s' {1..50}
 printf '\n'
+
+
+#3. Report the customer with the highest average transaction amount in the dataset.
+## Find all unique customer ids
+## For each customer id, find all transactions
+awk 'BEGIN { FS=OFS=SUBSEP=","}{print $2, $9}' data/bank_transactions.csv | awk 'BEGIN { FS=OFS=SUBSEP=","} {arr[$1]+=$2} END {for (i in arr) print i,arr[i]}' | sort -nr -k 2 -t ','
