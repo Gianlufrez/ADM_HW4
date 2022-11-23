@@ -47,3 +47,9 @@ printf '\n'
 ## Find all unique customer ids
 ## For each customer id, find all transactions
 awk 'BEGIN { FS=OFS=SUBSEP=","}{print $2, $9}' data/bank_transactions.csv | awk 'BEGIN { FS=OFS=SUBSEP=","} {arr[$1]+=$2} END {for (i in arr) print i,arr[i]}' | sort -nr -k 2 -t ','
+
+# Count how many transactions each user has
+awk -F ',' '{print $2}' data/bank_transactions.csv | sort | uniq -c | sort -k 2 | awk 'BEGIN {FS = " ";OFS = ","} {print $1, $2}'  > counts.txt 
+
+# Get the total amounts for each user
+awk 'BEGIN { FS=OFS=SUBSEP=","}{print $2, $9}' data/bank_transactions.csv | awk 'BEGIN { FS=OFS=SUBSEP=","} {arr[$1]+=$2} END {for (i in arr) print i,arr[i]}' | sort -k 1 -t ',' > amounts.txt 
