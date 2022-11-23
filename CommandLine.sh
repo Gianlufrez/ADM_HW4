@@ -46,10 +46,26 @@ printf '\n'
 #3. Report the customer with the highest average transaction amount in the dataset.
 ## Find all unique customer ids
 ## For each customer id, find all transactions
-awk 'BEGIN { FS=OFS=SUBSEP=","}{print $2, $9}' data/bank_transactions.csv | awk 'BEGIN { FS=OFS=SUBSEP=","} {arr[$1]+=$2} END {for (i in arr) print i,arr[i]}' | sort -nr -k 2 -t ','
+
+echo "3. Who is the customer with the highest average transaction amount?"
 
 # Count how many transactions each user has
-awk -F ',' '{print $2}' data/bank_transactions.csv | sort | uniq -c | sort -k 2 | awk 'BEGIN {FS = " ";OFS = ","} {print $1, $2}'  > counts.txt 
+awk -F ',' '{print $2}' data/bank_transactions.csv | sort | uniq -c | sort -k 2 | awk 'BEGIN {FS = " ";OFS = ","} {print $1, $2}'  > counts.tmp 
 
 # Get the total amounts for each user
-awk 'BEGIN { FS=OFS=SUBSEP=","}{print $2, $9}' data/bank_transactions.csv | awk 'BEGIN { FS=OFS=SUBSEP=","} {arr[$1]+=$2} END {for (i in arr) print i,arr[i]}' | sort -k 1 -t ',' > amounts.txt 
+awk 'BEGIN { FS=OFS=SUBSEP=","}{print $2, $9}' data/bank_transactions.csv | awk 'BEGIN { FS=OFS=SUBSEP=","} {arr[$1]+=$2} END {for (i in arr) print i,arr[i]}' | sort -k 1 -t ',' > amounts.tmp 
+
+# Create a csv with id, total sum, and counts
+paste counts.tmp amounts.tmp | awk 'BEGIN {FS=" "; OFS=","} {print $1, $2}' | awk 'BEGIN {FS=","; OFS=","} {print $2, $4, $1}' > count_amounts.tmp
+
+# Calculate the average
+highest_avg=$(awk 'BEGIN {FS=OFS=","} {$4 = $2 / $3}1' count_amounts.tmp | sort -t ',' -nr -k 4 | head -1)
+
+# Get the fields we are interested in
+id=$(awk -F ',' '{print $1}' <<< "$highest_avg")
+avg=$(awk -F ',' '{print $4}' <<< "$highest_avg")
+
+echo "The customer with the highest average transaction amount is '$id' with an average amount of '$avg' INR."
+
+# Clean up
+rm -f ./*.tmp
