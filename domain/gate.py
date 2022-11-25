@@ -1,10 +1,17 @@
-"""A module for a gate in the algorithmic question."""
+"""A module for a gate in the algorithmic question of HW4 for Algorithmic Methods for Data Science."""
 
 
 class Gate:
     """A university gate through which students can enter and which is supervised by a guard."""
 
     def __init__(self, number):
+        """Constructor for the Gate class.
+	
+        :arg
+        number (int) - the number of this gate.
+
+        Returns a new instance of the Gate class.
+        """
         self.number = number
         self.closed = False
         self.students = []
@@ -16,7 +23,11 @@ class Gate:
         self.closed = True
 
     def set_guard(self, guard):
-        """Sets the guard for this gate."""
+        """Sets the guard for this gate.
+
+        :arg
+        guard - the guard to be assigned to this gate.
+        """
         self.guard = guard
 
     def has_guard(self):
@@ -36,7 +47,11 @@ class Gate:
         return guard
 
     def add_student(self, student):
-        """Adds a student into the queue and sets the priority of this gate."""
+        """Adds a student into the end of the queue and sets the priority of this gate.
+
+        :arg
+        student - the student to be placed at the end of the queue.
+        """
         self.students.append(student)
         self._set_priority()
 
@@ -71,6 +86,7 @@ class Gate:
             self.priority = 10 ** 3 + 1
 
     def __lt__(self, other):
+        """Compares the priority of each gate."""
         return self.priority < other.priority
 
     def __repr__(self):
