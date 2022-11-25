@@ -1,0 +1,2534 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "014ddf26",
+   "metadata": {},
+   "source": [
+    "# Homework 4 - Getting to know your customers\n",
+    "\n",
+    "## 1. Finding Similar Costumers\n",
+    "\n",
+    "Companies nowadays are implementing product suggestions to provide users with things they are likely to buy. The process often starts by finding similar behaviours among consumers; for this task, we will focus on this part in the specific.\n",
+    "Here you will implement an algorithm to find the most similar match to a consumer given his bank account information. In particular, you will implement your version of the LSH algorithm that takes as input information about a consumer and finds people similar to the one in the study."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "d42411ea",
+   "metadata": {},
+   "source": [
+    "## 1.1 Set up the data\n",
+    "\n",
+    "For the sake of this first part, not all columns are necessary since comparing each field single handedly can be quite time-expensive. Then, carefully read the linked guide above and try to understand which features will be appropriate for this task (An heads up: some users have more than one transaction record, make sure to handle them all). Once you have finished, project a version of the dataset to work with.\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "c78859d6",
+   "metadata": {},
+   "source": [
+    "First of all we use pandas to import the dataset of transaction of a bank in India. The features that could be useful to match similar consumer given the bank accont information are: CustomerID, CustomerDOB (to group by similar ages), CustGender, CustAccountBalance (to group by richness) and TransactionAmount (to group by how much money they use). We are not interested in location (all are in India) and the time of the transaction, but we'll keep transaction date to calculate the age of the person at the year in which the data are taken."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 77,
+   "id": "75292d05",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "import matplotlib.pyplot as plt\n",
+    "from collections import Counter\n",
+    "import seaborn as sns\n",
+    "from tqdm import tqdm as tq\n",
+    "from statistics import mean\n",
+    "import warnings\n",
+    "warnings.filterwarnings(\"ignore\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 78,
+   "id": "10b7e6d7",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df = pd.read_csv('/Users/giacomo/Desktop/locale/bank_transactions.csv', usecols = ['TransactionID', 'CustomerID', 'CustomerDOB','CustLocation', 'CustGender', 'TransactionDate', 'CustAccountBalance', 'TransactionAmount (INR)'])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 79,
+   "id": "ec8c2a96",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>TransactionID</th>\n",
+       "      <th>CustomerID</th>\n",
+       "      <th>CustomerDOB</th>\n",
+       "      <th>CustGender</th>\n",
+       "      <th>CustLocation</th>\n",
+       "      <th>CustAccountBalance</th>\n",
+       "      <th>TransactionDate</th>\n",
+       "      <th>TransactionAmount (INR)</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>T1</td>\n",
+       "      <td>C5841053</td>\n",
+       "      <td>10/1/94</td>\n",
+       "      <td>F</td>\n",
+       "      <td>JAMSHEDPUR</td>\n",
+       "      <td>17819.05</td>\n",
+       "      <td>2/8/16</td>\n",
+       "      <td>25.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>T2</td>\n",
+       "      <td>C2142763</td>\n",
+       "      <td>4/4/57</td>\n",
+       "      <td>M</td>\n",
+       "      <td>JHAJJAR</td>\n",
+       "      <td>2270.69</td>\n",
+       "      <td>2/8/16</td>\n",
+       "      <td>27999.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>T3</td>\n",
+       "      <td>C4417068</td>\n",
+       "      <td>26/11/96</td>\n",
+       "      <td>F</td>\n",
+       "      <td>MUMBAI</td>\n",
+       "      <td>17874.44</td>\n",
+       "      <td>2/8/16</td>\n",
+       "      <td>459.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>T4</td>\n",
+       "      <td>C5342380</td>\n",
+       "      <td>14/9/73</td>\n",
+       "      <td>F</td>\n",
+       "      <td>MUMBAI</td>\n",
+       "      <td>866503.21</td>\n",
+       "      <td>2/8/16</td>\n",
+       "      <td>2060.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>T5</td>\n",
+       "      <td>C9031234</td>\n",
+       "      <td>24/3/88</td>\n",
+       "      <td>F</td>\n",
+       "      <td>NAVI MUMBAI</td>\n",
+       "      <td>6714.43</td>\n",
+       "      <td>2/8/16</td>\n",
+       "      <td>1762.5</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>...</th>\n",
+       "      <td>...</td>\n",
+       "      <td>...</td>\n",
+       "      <td>...</td>\n",
+       "      <td>...</td>\n",
+       "      <td>...</td>\n",
+       "      <td>...</td>\n",
+       "      <td>...</td>\n",
+       "      <td>...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1048562</th>\n",
+       "      <td>T1048563</td>\n",
+       "      <td>C8020229</td>\n",
+       "      <td>8/4/90</td>\n",
+       "      <td>M</td>\n",
+       "      <td>NEW DELHI</td>\n",
+       "      <td>7635.19</td>\n",
+       "      <td>18/9/16</td>\n",
+       "      <td>799.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1048563</th>\n",
+       "      <td>T1048564</td>\n",
+       "      <td>C6459278</td>\n",
+       "      <td>20/2/92</td>\n",
+       "      <td>M</td>\n",
+       "      <td>NASHIK</td>\n",
+       "      <td>27311.42</td>\n",
+       "      <td>18/9/16</td>\n",
+       "      <td>460.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1048564</th>\n",
+       "      <td>T1048565</td>\n",
+       "      <td>C6412354</td>\n",
+       "      <td>18/5/89</td>\n",
+       "      <td>M</td>\n",
+       "      <td>HYDERABAD</td>\n",
+       "      <td>221757.06</td>\n",
+       "      <td>18/9/16</td>\n",
+       "      <td>770.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1048565</th>\n",
+       "      <td>T1048566</td>\n",
+       "      <td>C6420483</td>\n",
+       "      <td>30/8/78</td>\n",
+       "      <td>M</td>\n",
+       "      <td>VISAKHAPATNAM</td>\n",
+       "      <td>10117.87</td>\n",
+       "      <td>18/9/16</td>\n",
+       "      <td>1000.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1048566</th>\n",
+       "      <td>T1048567</td>\n",
+       "      <td>C8337524</td>\n",
+       "      <td>5/3/84</td>\n",
+       "      <td>M</td>\n",
+       "      <td>PUNE</td>\n",
+       "      <td>75734.42</td>\n",
+       "      <td>18/9/16</td>\n",
+       "      <td>1166.0</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "<p>1048567 rows × 8 columns</p>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "        TransactionID CustomerID CustomerDOB CustGender   CustLocation  \\\n",
+       "0                  T1   C5841053     10/1/94          F     JAMSHEDPUR   \n",
+       "1                  T2   C2142763      4/4/57          M        JHAJJAR   \n",
+       "2                  T3   C4417068    26/11/96          F         MUMBAI   \n",
+       "3                  T4   C5342380     14/9/73          F         MUMBAI   \n",
+       "4                  T5   C9031234     24/3/88          F    NAVI MUMBAI   \n",
+       "...               ...        ...         ...        ...            ...   \n",
+       "1048562      T1048563   C8020229      8/4/90          M      NEW DELHI   \n",
+       "1048563      T1048564   C6459278     20/2/92          M         NASHIK   \n",
+       "1048564      T1048565   C6412354     18/5/89          M      HYDERABAD   \n",
+       "1048565      T1048566   C6420483     30/8/78          M  VISAKHAPATNAM   \n",
+       "1048566      T1048567   C8337524      5/3/84          M           PUNE   \n",
+       "\n",
+       "         CustAccountBalance TransactionDate  TransactionAmount (INR)  \n",
+       "0                  17819.05          2/8/16                     25.0  \n",
+       "1                   2270.69          2/8/16                  27999.0  \n",
+       "2                  17874.44          2/8/16                    459.0  \n",
+       "3                 866503.21          2/8/16                   2060.0  \n",
+       "4                   6714.43          2/8/16                   1762.5  \n",
+       "...                     ...             ...                      ...  \n",
+       "1048562             7635.19         18/9/16                    799.0  \n",
+       "1048563            27311.42         18/9/16                    460.0  \n",
+       "1048564           221757.06         18/9/16                    770.0  \n",
+       "1048565            10117.87         18/9/16                   1000.0  \n",
+       "1048566            75734.42         18/9/16                   1166.0  \n",
+       "\n",
+       "[1048567 rows x 8 columns]"
+      ]
+     },
+     "execution_count": 79,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df.copy()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "d21e025e",
+   "metadata": {},
+   "source": [
+    "The dataset is composed by 1048567 transactions and 7 features referred to: TransactionID, CustomerID\tCustomerDOB, CustGender, CustAccountBalance, TransactionDate, TransactionAmount (INR). Let's have a look into the missing values:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 80,
+   "id": "492d22ef",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "TransactionID                 0\n",
+       "CustomerID                    0\n",
+       "CustomerDOB                3397\n",
+       "CustGender                 1100\n",
+       "CustLocation                151\n",
+       "CustAccountBalance         2369\n",
+       "TransactionDate               0\n",
+       "TransactionAmount (INR)       0\n",
+       "dtype: int64"
+      ]
+     },
+     "execution_count": 80,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df.isna().sum()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "9d8bacb4",
+   "metadata": {},
+   "source": [
+    "Given that the dataset is composed by 1048567 rows the missing values are a small percentage, so we decide to drop them: "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 81,
+   "id": "fd105344",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df = df.dropna()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 82,
+   "id": "d2b95dbb",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "<class 'pandas.core.frame.DataFrame'>\n",
+      "Int64Index: 1041614 entries, 0 to 1048566\n",
+      "Data columns (total 8 columns):\n",
+      " #   Column                   Non-Null Count    Dtype  \n",
+      "---  ------                   --------------    -----  \n",
+      " 0   TransactionID            1041614 non-null  object \n",
+      " 1   CustomerID               1041614 non-null  object \n",
+      " 2   CustomerDOB              1041614 non-null  object \n",
+      " 3   CustGender               1041614 non-null  object \n",
+      " 4   CustLocation             1041614 non-null  object \n",
+      " 5   CustAccountBalance       1041614 non-null  float64\n",
+      " 6   TransactionDate          1041614 non-null  object \n",
+      " 7   TransactionAmount (INR)  1041614 non-null  float64\n",
+      "dtypes: float64(2), object(6)\n",
+      "memory usage: 71.5+ MB\n"
+     ]
+    }
+   ],
+   "source": [
+    "df.info()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "c14c12ec",
+   "metadata": {},
+   "source": [
+    "# 1.1.1 Age"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "24c2ff85",
+   "metadata": {},
+   "source": [
+    "Now we decide to convert into datetime the date of birthday of the customers and the date of the transaction:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 83,
+   "id": "8a10bb48",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df['CustomerDOB'] = pd.to_datetime(df['CustomerDOB'])\n",
+    "\n",
+    "df['TransactionDate'] = pd.to_datetime(df['TransactionDate']) "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 84,
+   "id": "6c7184f3",
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>TransactionID</th>\n",
+       "      <th>CustomerID</th>\n",
+       "      <th>CustomerDOB</th>\n",
+       "      <th>CustGender</th>\n",
+       "      <th>CustLocation</th>\n",
+       "      <th>CustAccountBalance</th>\n",
+       "      <th>TransactionDate</th>\n",
+       "      <th>TransactionAmount (INR)</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>T1</td>\n",
+       "      <td>C5841053</td>\n",
+       "      <td>1994-10-01</td>\n",
+       "      <td>F</td>\n",
+       "      <td>JAMSHEDPUR</td>\n",
+       "      <td>17819.05</td>\n",
+       "      <td>2016-02-08</td>\n",
+       "      <td>25.0</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "  TransactionID CustomerID CustomerDOB CustGender CustLocation  \\\n",
+       "0            T1   C5841053  1994-10-01          F   JAMSHEDPUR   \n",
+       "\n",
+       "   CustAccountBalance TransactionDate  TransactionAmount (INR)  \n",
+       "0            17819.05      2016-02-08                     25.0  "
+      ]
+     },
+     "execution_count": 84,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df.head(1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 85,
+   "id": "bf27009b",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "2016    1041614\n",
+       "Name: TransactionDate, dtype: int64"
+      ]
+     },
+     "execution_count": 85,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df['TransactionDate'].dt.year.value_counts()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 86,
+   "id": "e220f726",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "8     427316\n",
+       "9     157924\n",
+       "10     50729\n",
+       "7      48083\n",
+       "11     47029\n",
+       "4      46955\n",
+       "3      46738\n",
+       "6      45926\n",
+       "2      43505\n",
+       "12     42888\n",
+       "1      42456\n",
+       "5      42065\n",
+       "Name: TransactionDate, dtype: int64"
+      ]
+     },
+     "execution_count": 86,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df['TransactionDate'].dt.month.value_counts()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "2e236bee",
+   "metadata": {},
+   "source": [
+    "All the data were taken in 2016, so we'll use this year to calculate the ages."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "0d4d18cd",
+   "metadata": {},
+   "source": [
+    "Going through the Date of Birthday we can see that there is something strange: there are dates of birthday referred to 1800, probably cause it is a default value when this data is missing, and a right tail that seems to be a part of the right graph with an offset: "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 87,
+   "id": "6c936874",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "image/png": "iVBORw0KGgoAAAANSUhEUgAAAYQAAAD4CAYAAADsKpHdAAAAOXRFWHRTb2Z0d2FyZQBNYXRwbG90bGliIHZlcnNpb24zLjUuMSwgaHR0cHM6Ly9tYXRwbG90bGliLm9yZy/YYfK9AAAACXBIWXMAAAsTAAALEwEAmpwYAAAhMklEQVR4nO3de3RU9d3v8fcXgmALRqTgokANVKTc5JKA8QYiD5eqCCpYrK0gWITy2Kq9CMf29LiUpZ5a6OMFXSoYvCGIFTh6eAqCiFhKSCAKiEhAhAgHgiAigjXwPX/ML+kkTJKZcEkmfF5rzZo9371/e36/2TCf2ZeZmLsjIiJSp7o7ICIiNYMCQUREAAWCiIgECgQREQEUCCIiEqRUdweq6nvf+56npaVVdzdERJJKbm7uHndvGmte0gZCWloaOTk51d0NEZGkYmafljdPh4xERARQIIiISKBAEBERIInPIcip9e2331JQUMDhw4eruysiEocGDRrQsmVL6tWrF3cbBYLEpaCggEaNGpGWloaZVXd3RKQC7s7nn39OQUEBrVu3jrudDhlJXA4fPkyTJk0UBiJJwMxo0qRJwnv0CgSJm8JAJHlU5f+rAkFERACdQ5AqSpvw5gld39aHrj6h60vEFVdcwSOPPEJGRsZJfZ5HH32UJ598ku7du/PSSy+d1Ocqa+TIkVxzzTUMHTr0pCxfVbfddht33303HTp0iGv5pUuXcsYZZ3DJJZcAp66fpwsFgshxKCoqIiUlvv9GU6dOZcGCBQmd5EsWHxR8wYUtzwYSe02effbZhJ5n6dKlNGzYsCQQ5N8Sed3Lo0NGkhS2bt1K+/bt+cUvfkHHjh3p378/hw4dAiKf8It/xmTPnj0U/8ZVVlYWQ4YMYdCgQbRu3ZrHH3+cyZMn061bNzIzM9m7d2/J+l988UUuueQSOnXqRHZ2NgAHDx5k1KhR9OjRg27dujFv3ryS9Q4bNoxBgwbRv3//Y/o6efJkOnXqRKdOnfjrX/8KwNixY9myZQvXXnstU6ZMKbV8VlYWgwcPZuDAgbRr14777ruvVL969uxJ165duf322zly5AgAM2fOpHPnznTq1Il77rmnZPmGDRvym9/8hu7du9O3b18KCwuP6V9ubi69e/cmPT2dAQMGsHPnzpiv+VtvvcXll1/OBRdcwBtvvAFELi649dZb6dy5M926dePtt98GYN7sl0u9JllZWVx//fUMHDiQtm3b8vvf/z7mc0Rvu4YNG3LvvffSpUsXMjMz2bVrV6llt27dylNPPcWUKVPo2rUr7777LgDLli3jkksuoU2bNsyZM6dk+T//+c/06NGDCy+8kD/96U/HPPeRI0cYOXIknTp1onPnziXb5ZlnnqFHjx506dKFG264ga+//hqI7I2MGzeOPn360KZNG9555x1GjRpF+/btGTlyZMl6Fy5cyMUXX0z37t0ZNmwYX331Vann3bx5M927dy95vGnTJtLT0yvcNhX16e6776ZPnz6l/h1UlQJBksamTZsYP34869ev5+yzz+a1116rtM26det4+eWXyc7O5t577+U73/kOa9as4eKLL+b5558vWe7gwYP84x//YOrUqYwaNQqASZMmceWVV7Jq1Srefvttfve733Hw4EEAVqxYwYwZM1iyZEmp58vNzeW5555j5cqV/POf/+SZZ55hzZo1PPXUU3z/+9/n7bff5q677jqmn9nZ2bz00kvk5eXx6quvkpOTw4YNG5g1axbvvfceeXl51K1bl5deeokdO3Zwzz33sGTJEvLy8li1ahVz584tGUf37t1ZvXo1vXv3LhUuEPk+yR133MGcOXPIzc1l1KhR3HvvvTFfu61bt/LOO+/w5ptvMnbsWA4fPswTTzwBwNq1a5k5cyYjRowouZKl7GuSl5fHrFmzWLt2LbNmzWL79u0VbquDBw+SmZnJ+++/T69evXjmmWdKzU9LS2Ps2LHcdddd5OXlcfnllwOwc+dOli9fzhtvvMGECROAyJvypk2byM7OJi8vj9zcXJYtW1ZqfXl5eXz22WesW7eOtWvXcuuttwJw/fXXs2rVKt5//33at2/PtGnTStrs27ePJUuWMGXKFAYNGsRdd93F+vXrWbt2LXl5eezZs4cHHniAt956i9WrV5ORkcHkyZNLPe8Pf/hDUlNTycvLA+C5555j5MiRFW6bivr08ccf89Zbb/GXv/ylwtc3HjpkJEmjdevWdO3aFYD09HS2bt1aaZs+ffrQqFEjGjVqRGpqKoMGDQKgc+fOfPDBByXL3XTTTQD06tWLL7/8ki+++IKFCxcyf/58HnnkESDy6Xjbtm0A9OvXj3POOeeY51u+fDnXXXcd3/3ud4HIf+R3332Xbt26VdjPfv360aRJk5I2y5cvJyUlhdzcXHr06AHAoUOHaNasGatWreKKK66gadPID1befPPNLFu2jCFDhlCnTh1+8pOfAPCzn/2M66+/vtTzbNy4kXXr1tGvXz8g8im5efPmMft04403UqdOHdq2bUubNm346KOPWL58OXfccQcAP/rRjzjvvPP4+OOPY74mffv2JTU1FYAOHTrw6aef0qpVq3JfgzPOOINrrrkGiGzfRYsWVfiaFSsed4cOHUr2KhYuXMjChQtLXvevvvqKTZs20atXr5J2bdq0YcuWLdxxxx1cffXVJXt769at4w9/+ANffPEFX331FQMGDChpM2jQIMyMzp07c+6559K5c2cAOnbsyNatWykoKODDDz/k0ksvBeBf//oXF1988TF9vu2223juueeYPHkys2bNIjs7u8JtU1Gfhg0bRt26deN6rSpTaSCYWTtgVlSpDfA/gedDPQ3YCtzo7vtCm4nAaOAI8Ct3/3uopwNZwJnA/wV+7e5uZvXD+tKBz4GfuPvW4x6d1Cr169cvma5bt27JIaOUlBSOHj0KcMx119Ft6tSpU/K4Tp06FBUVlcwre4memeHuvPbaa7Rr167UvJUrV5a84Zfl7okOq8LnHzFiBA8++GCpecV7A1VZr7vTsWNHVqxYUeU+leeQl347Kbu9ol/vWOrVq1fynPEsH+t5ivvn7kycOJHbb7+93HaNGzfm/fff5+9//ztPPPEEs2fPZvr06YwcOZK5c+fSpUsXsrKyWLp06THPFf1vqfhxUVERdevWpV+/fsycObPCPt9www3cd999XHnllaSnp9OkSRN27NhR7rapqE/l/VusikoPGbn7Rnfv6u5dibxhfw28DkwAFrt7W2BxeIyZdQCGAx2BgcBUMyuOryeBMUDbcBsY6qOBfe5+PjAFePiEjE5OC2lpaeTm5gKUOoaciFmzIp95li9fTmpqKqmpqQwYMIDHHnus5E1mzZo1la6nV69ezJ07l6+//pqDBw/y+uuvlxzaqMiiRYvYu3cvhw4dYu7cuVx66aX07duXOXPmsHv3bgD27t3Lp59+ykUXXcQ777zDnj17OHLkCDNnzqR3794AHD16tOQ1ePnll7nssstKPU+7du0oLCwsedP59ttvWb9+fcw+vfrqqxw9epTNmzezZcsW2rVrR69evUqukPr444/Ztm3bMYF5MjVq1IgDBw5UutyAAQOYPn16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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "count = Counter(df['CustomerDOB'].dt.year)\n",
+    "\n",
+    "plt.bar(count.keys(), count.values(), label = 'number of people born in the same year')\n",
+    "\n",
+    "plt.legend()\n",
+    " \n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "7450cbe7",
+   "metadata": {},
+   "source": [
+    "We decide to drop data related to years 1800 and rearrange the data after year 2000: "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 88,
+   "id": "2738d85b",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "image/png": "iVBORw0KGgoAAAANSUhEUgAAAYQAAAD4CAYAAADsKpHdAAAAOXRFWHRTb2Z0d2FyZQBNYXRwbG90bGliIHZlcnNpb24zLjUuMSwgaHR0cHM6Ly9tYXRwbG90bGliLm9yZy/YYfK9AAAACXBIWXMAAAsTAAALEwEAmpwYAAAiE0lEQVR4nO3de3TU1d3v8fcXgqCCESm4KLEGKlJucknEeAOBh8tTRVDBYm0FwaLUx3rpRTi2p49LedTWQo8XdGHBgCKCWIWjpYIgIpYSEoxCRCRgxAgHwkVFFDTwPX/MTpyESTIJhFz4vNaaNb/5/vb+zd6TZL6z9/79JubuiIiINKjpBoiISO2ghCAiIoASgoiIBEoIIiICKCGIiEiQUNMNqKrvfe97npycXNPNEBGpU7Kysna5e8tY++psQkhOTiYzM7OmmyEiUqeY2cdl7dOUkYiIAEoIIiISKCGIiAhQh9cQYvn222/Jz8/nwIEDNd0UEYlDkyZNSEpKolGjRjXdFKGeJYT8/HyaNWtGcnIyZlbTzRGRcrg7u3fvJj8/n7Zt29Z0c4R6NmV04MABWrRooWQgUgeYGS1atNCIvhapVwkBUDIQqUP091q71LuEICIiVVOv1hBKS57w6jE9Xt6Dlx/T41XGZZddxsMPP0xqamq1Ps8jjzzCE088Qc+ePZk9e3a1Pldpo0eP5oorrmD48OHVUr6qbrrpJu666y46deoUV/nly5dz0kkncdFFFwHHr50iR6teJwSJKCwsJCEhvh/11KlTWbRoUb1f5KvMa/K3v/2tUsdevnw5TZs2LU4I8p3KvO61VdEHzZr8gFhdNGV0DOXl5dGxY0d+8Ytf0LlzZwYOHMjXX38NRD7hF33Vxq5duyj6Hqb09HSGDRvGkCFDaNu2LY899hiTJ0+mR48epKWlsWfPnuLjP/vss1x00UV06dKFjIwMAPbv38+YMWM4//zz6dGjBwsWLCg+7ogRIxgyZAgDBw48oq2TJ0+mS5cudOnShb/+9a8A3HLLLWzZsoUrr7ySKVOmlCifnp7O0KFDGTx4MB06dODee+8t0a5evXrRvXt3br75Zg4dOgTAnDlz6Nq1K126dOHuu+8uLt+0aVN+/etf07NnT/r3709BQcER7cvKyqJPnz6kpKQwaNAgtm/fHvM1f/3117n00ks599xzeeWVV4DIyQU33ngjXbt2pUePHrzxxhsxX5P09HSuvvpqBg8eTPv27fnd734X8zmif3ZNmzblnnvuoVu3bqSlpbFjx44SZfPy8njyySeZMmUK3bt356233gJgxYoVXHTRRbRr14758+cXl//zn//M+eefz3nnnccf//jHI5770KFDjB49mi5dutC1a9fin8tTTz3F+eefT7du3bjmmmv46quvgMhoZPz48fTt25d27drx5ptvMmbMGDp27Mjo0aOLj7t48WIuvPBCevbsyYgRI/jyyy9LPO/mzZvp2bNn8eNNmzaRkpJS7s+mvDbddddd9O3bt8TvgdQ+SgjH2KZNm7j11lvJycnh9NNP58UXX6ywzvr163nuuefIyMjgnnvu4ZRTTuGdd97hwgsvZNasWcXl9u/fz7/+9S+mTp3KmDFjAJg0aRL9+vVjzZo1vPHGG/z2t79l//79AKxatYqZM2eybNmyEs+XlZXF008/zerVq/n3v//NU089xTvvvMOTTz7J97//fd544w3uvPPOI9qZkZHB7Nmzyc7O5oUXXiAzM5MNGzYwd+5c3n77bbKzs2nYsCGzZ89m27Zt3H333Sxbtozs7GzWrFnDyy+/XNyPnj17snbtWvr06VMiuUDkepLbbruN+fPnk5WVxZgxY7jnnntivnZ5eXm8+eabvPrqq9xyyy0cOHCAxx9/HIB169YxZ84cRo0aVXwmS+nXJDs7m7lz57Ju3Trmzp3LJ598Uu7Pav/+/aSlpfHuu+/Su3dvnnrqqRL7k5OTueWWW7jzzjvJzs7m0ksvBWD79u2sXLmSV155hQkTJgCRN+VNmzaRkZFBdnY2WVlZrFixosTxsrOz+fTTT1m/fj3r1q3jxhtvBODqq69mzZo1vPvuu3Ts2JHp06cX19m7dy/Lli1jypQpDBkyhDvvvJOcnBzWrVtHdnY2u3bt4v777+f1119n7dq1pKamMnny5BLP+8Mf/pDExESys7MBePrppxk9enS5P5vy2vThhx/y+uuv85e//KXc11dqVt0eu9VCbdu2pXv37gCkpKSQl5dXYZ2+ffvSrFkzmjVrRmJiIkOGDAGga9euvPfee8XlrrvuOgB69+7NF198wWeffcbixYtZuHAhDz/8MBD5dLx161YABgwYwBlnnHHE861cuZKrrrqKU089FYj8Ib/11lv06NGj3HYOGDCAFi1aFNdZuXIlCQkJZGVlcf755wPw9ddf06pVK9asWcNll11Gy5aRL1W8/vrrWbFiBcOGDaNBgwb85Cc/AeBnP/sZV199dYnn2bhxI+vXr2fAgAFA5FNy69atY7bp2muvpUGDBrRv35527drxwQcfsHLlSm677TYAfvSjH3H22Wfz4YcfxnxN+vfvT2JiIgCdOnXi448/5qyzzirzNTjppJO44oorgMjPd8mSJeW+ZkWK+t2pU6fiUcXixYtZvHhx8ev+5ZdfsmnTJnr37l1cr127dmzZsoXbbruNyy+/vHi0t379en7/+9/z2Wef8eWXXzJo0KDiOkOGDMHM6Nq1K2eeeSZdu3YFoHPnzuTl5ZGfn8/777/PxRdfDMA333zDhRdeeESbb7rpJp5++mkmT57M3LlzycjIKPdnU16bRowYQcOGDeN6raTmVJgQzKwDMDcq1A7438CsEE8G8oBr3X1vqDMRGAscAn7l7q+FeAqQDpwM/AO43d3dzBqH46UAu4GfuHveUfeuBjRu3Lh4u2HDhsVTRgkJCRw+fBjgiPOuo+s0aNCg+HGDBg0oLCws3lf6FD0zw9158cUX6dChQ4l9q1evLn7DL83dK9utcp9/1KhRPPDAAyX2FY0GqnJcd6dz586sWrWqym0qS+nXpPTPK/r1jqVRo0bFzxlP+VjPU9Q+d2fixIncfPPNZdZr3rw57777Lq+99hqPP/448+bNY8aMGYwePZqXX36Zbt26kZ6ezvLly494rujfpaLHhYWFNGzYkAEDBjBnzpxy23zNNddw77330q9fP1JSUmjRogXbtm0r82dTXpvK+l2s6+rbekKFU0buvtHdu7t7dyJv2F8BLwETgKXu3h5YGh5jZp2AkUBnYDAw1cyKPho8AYwD2ofb4BAfC+x193OAKcBDx6R3tUhycjJZWVkAJeaQK2Pu3EheXrlyJYmJiSQmJjJo0CAeffTR4jeZd955p8Lj9O7dm5dffpmvvvqK/fv389JLLxVPbZRnyZIl7Nmzh6+//pqXX36Ziy++mP79+zN//nx27twJwJ49e/j444+54IILePPNN9m1axeHDh1izpw59OnTB4DDhw8XvwbPPfccl1xySYnn6dChAwUFBcVvOt9++y05OTkx2/TCCy9w+PBhNm/ezJYtW+jQoQO9e/cuPkPqww8/ZOvWrUckzOrUrFkz9u3bV2G5QYMGMWPGjOL5+08//bT4dSyya9cuDh8+zDXXXMN9993H2rVrAdi3bx+tW7fm22+/rfTZYGlpabz99tvk5uYC8NVXXxWPoKI1adKEQYMGMX78+OKpqvJ+NkfTJqkdKjtl1B/Y7O4fm9lQ4LIQnwksB+4GhgLPu/tB4CMzywV6mVkecJq7rwIws1nAMGBRqPPf4VjzgcfMzLyqH2WD2pS1f/Ob33DttdfyzDPP0K9fvyodo3nz5lx00UV88cUXzJgxA4A//OEP3HHHHZx33nm4O8nJycWLq2Xp2bMno0ePplevXkBkaqCi6SKASy65hJ///Ofk5uby05/+tPgU2Pvvv5+BAwdy+PBhGjVqxOOPP05aWhoPPPAAffv2xd358Y9/zNChQ4HIp8WcnBxSUlJITEwsTnRFTjrpJObPn8+vfvUrPv/8cwoLC7njjjvo3LnzEW3q0KEDffr0YceOHTz55JM0adKEX/7yl9xyyy107dqVhIQE0tPTS3xSrm5Dhgxh+PDhLFiwgEcffbTMcgMHDmTDhg3F0zVNmzbl2WefpVWrVsVlPv30U2688cbi0WXRSOy+++7jggsu4Oyzz6Zr165xJaAiLVu2JD09neuuu46DBw8CkZ/hueeee0TZ66+/nr///e/FU1Xl/WyOpk1SO1hl3nPNbAaw1t0fM7PP3P30qH173b25mT0G/Nvdnw3x6UTe9POAB939P0L8UuBud7/CzNYDg909P+zbDFzg7rtKPf84IiMMfvCDH6R8/HHJ//OwYcMGOnbsWKkXQOKTnp5OZmYmjz322FEfq2nTpkec1SK108MPP8znn3/OfffdV23PUdf+bqOnierilJGZZbl7zAua4h4hmNlJwJXAxIqKxoh5OfHy6pQMuE8DpgGkpqYe1ehBRMp31VVXsXnz5iPOUpP6qzJTRv9JZHRQdOL1DjNr7e7bzaw1UDT5mQ9En6aRBGwL8aQY8eg6+WaWACQCe5BaY/To0SXOYz8aGh3UDS+99FJNN0GOs8pch3AdEH1awkJgVNgeBSyIio80s8Zm1pbI4nGGu28H9plZmkVO07ihVJ2iYw0HllV1/eAolx1E5DiqK3+vyRNePeZfhVMbxTVCMLNTgAFA9PlxDwLzzGwssBUYAeDuOWY2D3gfKARudfdDoc54vjvtdFG4AUwHngkL0HuInKVUaU2aNGH37t36CmyROqDo/yE0adKkppsiQVwJwd2/AlqUiu0mctZRrPKTgEkx4plAlxjxA4SEcjSSkpLIz8+P+VUIIlL7FP3HNKkd6tWVyo0aNar3X8omIlJd9F1GIiICKCGIiEighCAiIoASgojIMVEfTk1VQhAREUAJQUREAiUEEREBlBBERCRQQhAREUAJQUREAiUEEREBlBBERCRQQhAREUAJQUQkpvpw5XFlKSGIiAighCAiIoESgoiIAEoIIiISKCGIiAgQZ0Iws9PNbL6ZfWBmG8zsQjM7w8yWmNmmcN88qvxEM8s1s41mNigqnmJm68K+R8zMQryxmc0N8dVmlnzMeyoiIuWKd4Twf4B/uvuPgG7ABmACsNTd2wNLw2PMrBMwEugMDAammlnDcJwngHFA+3AbHOJjgb3ufg4wBXjoKPslIiKVVGFCMLPTgN7AdAB3/8bdPwOGAjNDsZnAsLA9FHje3Q+6+0dALtDLzFoDp7n7Knd3YFapOkXHmg/0Lxo9iIjI8RHPCKEdUAA8bWbvmNnfzOxU4Ex33w4Q7luF8m2AT6Lq54dYm7BdOl6ijrsXAp8DLUo3xMzGmVmmmWUWFBTE2UUREYlHPAkhAegJPOHuPYD9hOmhMsT6ZO/lxMurUzLgPs3dU909tWXLluW3WkREKiWehJAP5Lv76vB4PpEEsSNMAxHud0aVPyuqfhKwLcSTYsRL1DGzBCAR2FPZzoiISNVVmBDc/f8Bn5hZhxDqD7wPLARGhdgoYEHYXgiMDGcOtSWyeJwRppX2mVlaWB+4oVSdomMNB5aFdQYRETlOEuIsdxsw28xOArYANxJJJvPMbCywFRgB4O45ZjaPSNIoBG5190PhOOOBdOBkYFG4QWTB+hkzyyUyMhh5lP0SEam0oi+zy3vw8hpuSc2IKyG4ezaQGmNX/zLKTwImxYhnAl1ixA8QEoqIiNQMXaksIiKAEoKIiARKCCIiAighiIhIoIQgIiKAEoKIiARKCCIiAighiIhIoIQgIiKAEoKIiARKCCIiAighiIhIoIQgIiKAEoKIyDGXPOHV4q/SrkuUEETkhFZX37yrgxKCiIgASggiIhIoIYiICKCEICIiQVwJwczyzGydmWWbWWaInWFmS8xsU7hvHlV+opnlmtlGMxsUFU8Jx8k1s0fMzEK8sZnNDfHVZpZ8jPspIiIVqMwIoa+7d3f31PB4ArDU3dsDS8NjzKwTMBLoDAwGpppZw1DnCWAc0D7cBof4WGCvu58DTAEeqnqXRESkKo5mymgoMDNszwSGRcWfd/eD7v4RkAv0MrPWwGnuvsrdHZhVqk7RseYD/YtGDyIicnzEmxAcWGxmWWY2LsTOdPftAOG+VYi3AT6JqpsfYm3Cdul4iTruXgh8DrQo3QgzG2dmmWaWWVBQEGfTRUQkHglxlrvY3beZWStgiZl9UE7ZWJ/svZx4eXVKBtynAdMAUlNTj9gvIiJVF9cIwd23hfudwEtAL2BHmAYi3O8MxfOBs6KqJwHbQjwpRrxEHTNLABKBPZXvjoiIVFWFCcHMTjWzZkXbwEBgPbAQGBWKjQIWhO2FwMhw5lBbIovHGWFaaZ+ZpYX1gRtK1Sk61nBgWVhnEBGR4ySeKaMzgZfCGm8C8Jy7/9PM1gDzzGwssBUYAeDuOWY2D3gfKARudfdD4VjjgXTgZGBRuAFMB54xs1wiI4ORx6BvIiJSCRUmBHffAnSLEd8N9C+jziRgUox4JtAlRvwAIaGIiEjN0JXKIiICKCGIiEighCAiIoASgoiIBEoIIiICxH+lsohIvRD97zLzHry8BltS+2iEICIigBKCiIgESggiIgIoIYiISKCEICIigBKCiIgESggiIgIoIYiISKCEICIigBKCiIgESggiIgIoIYiISKCEICIigBKCiIgEcX/9tZk1BDKBT939CjM7A5gLJAN5wLXuvjeUnQiMBQ4Bv3L310I8BUgHTgb+Adzu7m5mjYFZQAqwG/iJu+cdg/6JiJT4ymspW2VGCLcDG6IeTwCWunt7YGl4jJl1AkYCnYHBwNSQTACeAMYB7cNtcIiPBfa6+znAFOChKvVGRESqLK6EYGZJwOXA36LCQ4GZYXsmMCwq/ry7H3T3j4BcoJeZtQZOc/dV7u5ERgTDYhxrPtDfzKxKPRIRkSqJd4TwV+B3wOGo2Jnuvh0g3LcK8TbAJ1Hl8kOsTdguHS9Rx90Lgc+BFqUbYWbjzCzTzDILCgribLqIiMSjwoRgZlcAO909K85jxvpk7+XEy6tTMuA+zd1T3T21ZcuWcTZHRETiEc+i8sXAlWb2Y6AJcJqZPQvsMLPW7r49TAftDOXzgbOi6icB20I8KUY8uk6+mSUAicCeKvZJRESqoMIRgrtPdPckd08msli8zN1/BiwERoVio4AFYXshMNLMGptZWyKLxxlhWmmfmaWF9YEbStUpOtbw8BxHjBBERKT6xH3aaQwPAvPMbCywFRgB4O45ZjYPeB8oBG5190Ohzni+O+10UbgBTAeeMbNcIiODkUfRLhERqYJKJQR3Xw4sD9u7gf5llJsETIoRzwS6xIgfICQUERGpGbpSWUREACUEEREJlBBERARQQhARkUAJQUREACUEEZFqlTzh1TrzbatHcx2CiEitVVfehGsTjRBERARQQhARkUAJQUREACUEEREJlBBERARQQhARkUAJQUREACUEEREJlBBERATQlcoiUo/o6uSjoxGCiIgASggiIhJUmBDMrImZZZjZu2aWY2b3hvgZZrbEzDaF++ZRdSaaWa6ZbTSzQVHxFDNbF/Y9YmYW4o3NbG6Irzaz5Groq4iIlCOeEcJBoJ+7dwO6A4PNLA2YACx19/bA0vAYM+sEjAQ6A4OBqWbWMBzrCWAc0D7cBof4WGCvu58DTAEeOvquiYhIZVSYEDziy/CwUbg5MBSYGeIzgWFheyjwvLsfdPePgFygl5m1Bk5z91Xu7sCsUnWKjjUf6F80ehARkeMjrjUEM2toZtnATmCJu68GznT37QDhvlUo3gb4JKp6foi1Cdul4yXquHsh8DnQIkY7xplZppllFhQUxNVBERGJT1wJwd0PuXt3IInIp/0u5RSP9cney4mXV6d0O6a5e6q7p7Zs2bKCVouISGVU6iwjd/8MWE5k7n9HmAYi3O8MxfKBs6KqJQHbQjwpRrxEHTNLABKBPZVpm4iIHJ14zjJqaWanh+2Tgf8APgAWAqNCsVHAgrC9EBgZzhxqS2TxOCNMK+0zs7SwPnBDqTpFxxoOLAvrDCIicpzEc6Vya2BmOFOoATDP3V8xs1XAPDMbC2wFRgC4e46ZzQPeBwqBW939UDjWeCAdOBlYFG4A04FnzCyXyMhg5LHonIiIxK/ChODu7wE9YsR3A/3LqDMJmBQjngkcsf7g7gcICUVERGqGrlQWERFACUFERAJ926mI1Gn6htNjRyMEEREBlBBERCRQQhAREUAJQUREAiUEEREBdJaRiNRBOrOoemiEICIigBKCiIgESggiIgIoIYiISKCEICIigBKCiIgESggiIgIoIYiISKAL00SkTtDFaNVPIwQREQGUEEREJKgwIZjZWWb2hpltMLMcM7s9xM8wsyVmtincN4+qM9HMcs1so5kNioqnmNm6sO8RM7MQb2xmc0N8tZklV0NfRUSkHPGMEAqBX7t7RyANuNXMOgETgKXu3h5YGh4T9o0EOgODgalm1jAc6wlgHNA+3AaH+Fhgr7ufA0wBHjoGfRMRqVWSJ7xaq9dCKkwI7r7d3deG7X3ABqANMBSYGYrNBIaF7aHA8+5+0N0/AnKBXmbWGjjN3Ve5uwOzStUpOtZ8oH/R6EFERI6PSq0hhKmcHsBq4Ex33w6RpAG0CsXaAJ9EVcsPsTZhu3S8RB13LwQ+B1rEeP5xZpZpZpkFBQWVabqIiFQg7tNOzawp8CJwh7t/Uc4H+Fg7vJx4eXVKBtynAdMAUlNTj9gvIvVLbZ5eqY/iGiGYWSMiyWC2u/89hHeEaSDC/c4QzwfOiqqeBGwL8aQY8RJ1zCwBSAT2VLYzIiJSdfGcZWTAdGCDu0+O2rUQGBW2RwELouIjw5lDbYksHmeEaaV9ZpYWjnlDqTpFxxoOLAvrDCIicpzEM2V0MfBzYJ2ZZYfY/wIeBOaZ2VhgKzACwN1zzGwe8D6RM5RudfdDod54IB04GVgUbhBJOM+YWS6RkcHIo+uWiIhUVoUJwd1XEnuOH6B/GXUmAZNixDOBLjHiBwgJRUREaoauVBYREUAJQUREAiUEEREB9PXXIlLL6NqDmqMRgoiIAEoIIiISKCGIiAighCAiIoESgojUuNr+fwJOFEoIIiICKCGIiEighCAiIoASgoiIBEoIIiICKCGIiEighCAiUgNq46m2SggiUiNq4xviiU4JQUREACUEEREJKkwIZjbDzHaa2fqo2BlmtsTMNoX75lH7JppZrpltNLNBUfEUM1sX9j1iZhbijc1sboivNrPkY9xHERGJQzwjhHRgcKnYBGCpu7cHlobHmFknYCTQOdSZamYNQ50ngHFA+3ArOuZYYK+7nwNMAR6qamdEpHbTukHtVmFCcPcVwJ5S4aHAzLA9ExgWFX/e3Q+6+0dALtDLzFoDp7n7Knd3YFapOkXHmg/0Lxo9iIjI8VPVNYQz3X07QLhvFeJtgE+iyuWHWJuwXTpeoo67FwKfAy1iPamZjTOzTDPLLCgoqGLTRUQklmO9qBzrk72XEy+vzpFB92nunuruqS1btqxiE0XkeNI0Ud1R1YSwI0wDEe53hng+cFZUuSRgW4gnxYiXqGNmCUAiR05RiYhINatqQlgIjArbo4AFUfGR4cyhtkQWjzPCtNI+M0sL6wM3lKpTdKzhwLKwziAidZRGBXVTQkUFzGwOcBnwPTPLB/4IPAjMM7OxwFZgBIC755jZPOB9oBC41d0PhUONJ3LG0snAonADmA48Y2a5REYGI49Jz0REpFIqTAjufl0Zu/qXUX4SMClGPBPoEiN+gJBQRESk5uhKZRERAZQQREQkqHDKSESkLEULx3kPXl5iWyonegG+Jl8/jRBERARQQhARkUAJQUREACUEEYlD9IVmuuis/lJCEBERQAlBREQCJQQREQGUEESkDForOPEoIYhIMSWBE5uuVBY5gdWWK2SldlBCEDnBaAQgZVFCEKmn9MYvlaU1BBERATRCEKnztA4gx4oSgkgdVNZ0kKaJ6r6aTPBKCCI1pKz/JRBrW+R40BqCSDXTF8NJXVFrEoKZDTazjWaWa2YTaro9IpWlN36p62rFlJGZNQQeBwYA+cAaM1vo7u/XbMvkRFaZKR0t5kp1ON7rCbUiIQC9gFx33wJgZs8DQ4FqSQg6K6NuOp6fuPV7IbXN8XjfMnevlgNXqhFmw4HB7n5TePxz4AJ3/69S5cYB48LDDsDGSj7V94BdR9ncukZ9PjGozyeGY9Hns929ZawdtWWEYDFiR2Qqd58GTKvyk5hluntqVevXRerziUF9PjFUd59ry6JyPnBW1OMkYFsNtUVE5IRUWxLCGqC9mbU1s5OAkcDCGm6TiMgJpVZMGbl7oZn9F/Aa0BCY4e451fBUVZ5uqsPU5xOD+nxiqNY+14pFZRERqXm1ZcpIRERqmBKCiIgA9SAhmNkMM9tpZuujYt3MbJWZrTOz/2tmp0Xtmxi+HmOjmQ2KiqeE8rlm9oiZxToVtlaoTJ/NbICZZYV4lpn1i6pTL/sctf8HZvalmf0mKlZv+2xm54V9OWF/kxCvl302s0ZmNjPEN5jZxKg6daLPZnaWmb0R2p9jZreH+BlmtsTMNoX75lF1qu89zN3r9A3oDfQE1kfF1gB9wvYY4L6w3Ql4F2gMtAU2Aw3DvgzgQiLXRCwC/rOm+3aM+twD+H7Y7gJ8GlWnXvY5av+LwAvAb+p7n4mcIPIe0C08bnEC/G7/FHg+bJ8C5AHJdanPQGugZ9huBnwY3qf+BEwI8QnAQ2G7Wt/D6vwIwd1XAHtKhTsAK8L2EuCasD2UyC/QQXf/CMgFeplZa+A0d1/lkVd2FjCs2htfRZXps7u/4+5F13TkAE3MrHF97jOAmQ0DthDpc1GsPvd5IPCeu78b6u5290P1vM8OnGpmCcDJwDfAF3Wpz+6+3d3Xhu19wAagDZH3qpmh2Ey+a3+1vofV+YRQhvXAlWF7BN9d9NYG+CSqXH6ItQnbpeN1SVl9jnYN8I67H6Qe99nMTgXuBu4tVb7e9hk4F3Aze83M1prZ70K8Pvd5PrAf2A5sBR529z3U0T6bWTKREf1q4Ex33w6RpAG0CsWq9T2sviaEMcCtZpZFZBj2TYiX9RUZcX11Ri1XVp8BMLPOwEPAzUWhGMeoL32+F5ji7l+WKl+f+5wAXAJcH+6vMrP+1O8+9wIOAd8nMn3yazNrRx3ss5k1JTLFeYe7f1Fe0RixY/YeVisuTDvW3P0DIkNozOxcoOirAcv6ioz8sF06XmeU02fMLAl4CbjB3TeHcH3u8wXAcDP7E3A6cNjMDhD5g6uvfc4H3nT3XWHfP4jMxT9L/e3zT4F/uvu3wE4zextIBd6iDvXZzBoR+d2c7e5/D+EdZtba3beH6aCdIV6t72H1coRgZq3CfQPg98CTYddCYGSYQ28LtAcywpBsn5mlhZX5G4AFNdD0Kiurz2Z2OvAqMNHd3y4qX5/77O6XunuyuycDfwX+x90fq899JnKV/3lmdkqYU+8DvF/P+7wV6GcRpwJpwAd1qc+hfdOBDe4+OWrXQmBU2B7Fd+2v3vewml5lP9obMIfIHOK3RLLkWOB2Iqv1HwIPEq7IDuXvIbIyv5GoVXginyzWh32PRdepbbfK9JnIH9B+IDvq1qo+97lUvf+m5FlG9bbPwM+ILKKvB/5U3/sMNCVyFlkOkf+d8tu61mci03tO5Ayxor/PHxM5S2wpsCncnxFVp9rew/TVFSIiAtTTKSMREak8JQQREQGUEEREJFBCEBERQAlBREQCJQQREQGUEEREJPj/oywpoWeivLAAAAAASUVORK5CYII=\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "df.loc[df.CustomerDOB.dt.year > 2000, 'CustomerDOB'] = df.loc[df.CustomerDOB.dt.year > 2000, 'CustomerDOB'] - pd.DateOffset(years = 100)\n",
+    "\n",
+    "df.drop(df[df.CustomerDOB.dt.year == 1800].index, axis=0, inplace=True)\n",
+    "\n",
+    "count = Counter(df['CustomerDOB'].dt.year)\n",
+    "\n",
+    "plt.bar(count.keys(), count.values(), label = 'number of people born in the same year')\n",
+    "\n",
+    "plt.legend()\n",
+    " \n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "f190d333",
+   "metadata": {},
+   "source": [
+    "Now we can create a 'CustomerAge' column: "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 89,
+   "id": "185ca199",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df['CustomerAge'] = (df['TransactionDate'].dt.year - df['CustomerDOB'].dt.year).astype(int)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 90,
+   "id": "01a9530f",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "image/png": "iVBORw0KGgoAAAANSUhEUgAAAYwAAAD4CAYAAAD//dEpAAAAOXRFWHRTb2Z0d2FyZQBNYXRwbG90bGliIHZlcnNpb24zLjUuMSwgaHR0cHM6Ly9tYXRwbG90bGliLm9yZy/YYfK9AAAACXBIWXMAAAsTAAALEwEAmpwYAAAgRklEQVR4nO3df3BV9Z3/8eeLHwULiojgUGAnWPEXqPyIiD/AH1RgWwTa0TZuq/CViuvQWp2uK9TZ9tudZaqDo65r0cVqAX8jVmS07OqAFlkRCEpVoH5JBTWFlSj+pOIaeH//uJ9kb8JNcgiJCeH1mLlzz33f8zn388lN8srnnHNPFBGYmZk1pF1Ld8DMzA4ODgwzM8vEgWFmZpk4MMzMLBMHhpmZZdKhpTvQWEcffXQUFRW1dDfMzA4q69atey8iejam7UEbGEVFRZSWlrZ0N8zMDiqS3mpsW++SMjOzTBwYZmaWiQPDzMwyOWiPYZh98cUXlJeXs3v37pbuilmr07lzZ/r27UvHjh2bbJsODDtolZeXc/jhh1NUVISklu6OWasREbz//vuUl5fTv3//Jtuud0nZQWv37t306NHDYWFWiyR69OjR5LNvB4Yd1BwWZoU1x8+GA8PMzDLxMQxrM4pmPN2k29t607eadHv747zzzuOWW26huLi4WV/njjvu4K677mLo0KE8+OCDzfpatU2ZMoXx48dz8cUXN8n2lixZwsaNG5kxYwaLFy/m+OOP5+STTwa+vK9nW+fA+JJV/VJryV9G1rZVVlbSoUO2H+05c+awdOnSJj0w2lImTJjAhAkTAFi8eDHjx4+vDgxrGt4lZdZIW7du5aSTTuLKK69k4MCBjBkzhs8++wzI/UVbdema9957j6rrns2bN49JkyZx0UUX0b9/f+68805uvfVWhgwZwogRI9i5c2f19h944AHOOussBg0axJo1awDYtWsXV1xxBaeffjpDhgzhySefrN7uJZdcwkUXXcSYMWP26eutt97KoEGDGDRoELfffjsAf//3f8+bb77JhAkTuO2222qsP2/ePCZOnMi4ceM44YQT+OUvf1mjX8OHD2fw4MFcddVV7NmzB4CHH36YU045hUGDBnHDDTdUr9+1a1d++tOfMnToUEaPHk1FRcU+/Vu3bh3nnnsuw4YNY+zYsWzfvr3G83v27OHYY48lIvjwww9p164dK1asAGDkyJGUlZUxb948fvSjH/Hiiy+yZMkSrr/+egYPHsyf//xnAB577DGGDx/O8ccfzwsvvLBPH7Zv386oUaMYPHgwgwYNql7n6quvpri4mIEDB/KLX/yiev2ioiJ+9rOfceaZZ1JcXMzLL7/M2LFj+frXv87dd99dvd7s2bM5/fTTOfXUU2u0z1fXa/z+97/nxBNP5JxzzuGaa65h/PjxQN3fB83NgWF2ADZv3sz06dPZsGEDRx55JI8//niDbV5//XUeeugh1qxZw4033shXv/pVXnnlFc4880wWLFhQvd6uXbt48cUXmTNnDldccQUAs2bN4oILLmDt2rU899xzXH/99ezatQuAVatWMX/+fJYvX17j9datW8dvf/tbVq9ezUsvvcQ999zDK6+8wt13383XvvY1nnvuOa677rp9+rlmzRoefPBB1q9fz2OPPUZpaSmbNm3i0Ucf5b/+679Yv3497du358EHH2Tbtm3ccMMNLF++nPXr17N27VoWL15cPY6hQ4fy8ssvc+6559YIH8h9nubHP/4xixYtYt26dVxxxRXceOONNdZp3749xx9/PBs3bmTlypUMGzaMF154gc8//5zy8nKOO+646nXPOussJkyYwOzZs1m/fj1f//rXgdzMa82aNdx+++379AHgoYceYuzYsaxfv54//vGPDB48uPprXlpayquvvsof/vAHXn311eo2/fr1Y9WqVYwcOZIpU6awaNEiXnrpJX7+858D8Mwzz7B582bWrFnD+vXrWbduXXXQ5Sv0Grt37+aqq65i6dKlrFy5skbQ1vd90Jy8S8rsAPTv37/6F8uwYcPYunVrg23OP/98Dj/8cA4//HC6devGRRddBMApp5xS45fRpZdeCsCoUaP4+OOP+fDDD3nmmWdYsmQJt9xyC5A7tfjtt98G4MILL+Soo47a5/VWrlzJt7/9bbp06QLAd77zHV544QWGDBlSbz8vvPBCevToUd1m5cqVdOjQgXXr1nH66acD8Nlnn9GrVy/Wrl3LeeedR8+euYugfv/732fFihVMmjSJdu3a8b3vfQ+AH/zgB3znO9+p8TpvvPEGr7/+OhdeeCGQm0307t17n/6MHDmSFStWsGXLFmbOnMk999zDueeeW92XhlS9bl3v0+mnn84VV1zBF198waRJk6rf14ULFzJ37lwqKyvZvn07Gzdu5NRTTwWo3gV2yimn8Omnn1a/r507d65+v5555pnqr/Wnn37K5s2bGTVqVI3XLvQae/fu5dhjj63eXXjppZcyd+5cgDq/D0466aRMX4vGajAwJJ0APJpXOhb4ObAg1YuArcB3I+KD1GYmMBXYA1wTEf+Z6sOAecBhwO+Bn0RESOqUtjcMeB/4XkRsPeDRtRI+btF2derUqXq5ffv21bukOnTowN69ewH2ORc+v027du2qH7dr147Kysrq52qfFimJiODxxx/nhBNOqPHc6tWrqwOhtojY32HV+/qTJ0/mV7/6VY3nqmYTjdluRDBw4EBWrVpVb7uRI0dy9913s23bNv75n/+Z2bNn8/zzz+/zy7cuVV/n9u3b1/g6Vxk1ahQrVqzg6aef5rLLLuP6669n5MiR3HLLLaxdu5bu3bszZcqUGu9n/ntX+32trKwkIpg5cyZXXXVVnf3asmVLwdeo732r6/uguTW4Syoi3oiIwRExmNwv9L8CTwAzgGURMQBYlh4j6WSgBBgIjAPmSGqfNncXMA0YkG7jUn0q8EFEHAfcBtzcJKMzayFFRUWsW7cOgEWLFjVqG48+mvs7beXKlXTr1o1u3boxduxY/u3f/q36l8krr7zS4HZGjRrF4sWL+etf/8quXbt44oknGDlyZIPtnn32WXbu3Mlnn33G4sWLOfvssxk9ejSLFi1ix44dAOzcuZO33nqLM844gz/84Q+899577Nmzh4cffphzzz0XgL1791Z/DR566CHOOeecGq9zwgknUFFRUR0YX3zxBRs2bNinP2eccQYvvvgi7dq1o3PnzgwePJh///d/LziWww8/nE8++aTBMeZ766236NWrF1deeSVTp07l5Zdf5uOPP6ZLly5069aNd999l6VLl+7XNseOHct9993Hp59+CsBf/vKX6q9dlbpe48QTT+TNN9+sng1VfT9UbXd/vw+awv7ukhoN/Dki3pI0ETgv1ecDzwM3ABOBRyLic2CLpDJguKStwBERsQpA0gJgErA0tfm/aVuLgDslKRr7p5EdklrTDO4f/uEf+O53v8v999/PBRdc0KhtdO/enbPOOouPP/6Y++67D4B/+qd/4tprr+XUU08lIigqKuKpp56qdztDhw5lypQpDB8+HIAf/vCHDe6OAjjnnHO47LLLKCsr4+/+7u+qT0n9l3/5F8aMGcPevXvp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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "count = Counter(df['CustomerAge'])\n",
+    "\n",
+    "plt.bar(count.keys(), count.values(), label = 'number of people with same age')\n",
+    "\n",
+    "plt.legend()\n",
+    " \n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "b32f38ea",
+   "metadata": {},
+   "source": [
+    "Exploring the ages at the edges we can see that: "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 91,
+   "id": "6609f942",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "16"
+      ]
+     },
+     "execution_count": 91,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df['CustomerAge'].min()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 92,
+   "id": "ead74ec1",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "115"
+      ]
+     },
+     "execution_count": 92,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df['CustomerAge'].max()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "850d1caa",
+   "metadata": {},
+   "source": [
+    "Considering that the oldest person ever in India was Lucy d'Abreu who lived 113 years and 197 days (ref: Wikipedia) it seems a good choice to drop all the ages over 100 years."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 93,
+   "id": "a2b465bd",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df.drop(df[df.CustomerAge > 100].index, axis=0, inplace=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 94,
+   "id": "d6faa6d3",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "image/png": "iVBORw0KGgoAAAANSUhEUgAAAYQAAAD4CAYAAADsKpHdAAAAOXRFWHRTb2Z0d2FyZQBNYXRwbG90bGliIHZlcnNpb24zLjUuMSwgaHR0cHM6Ly9tYXRwbG90bGliLm9yZy/YYfK9AAAACXBIWXMAAAsTAAALEwEAmpwYAAAfl0lEQVR4nO3de5BV1Zn38e+Pi2BAEREsQpO3MSJqo3JpES/ghRF4EwQmpUk7E4WBiGORGK3EEWJN8mZqqGhpqXEMOhgN4B3bBKkYMlqgQUYEGiEqEIuOoHZgoBVFIeLY8Lx/nNWd083p7tPNpRv4fapOnX2evdfea69z+jxn7bX3bkUEZmZmbVq6AmZm1jo4IZiZGeCEYGZmiROCmZkBTghmZpa0a+kKNNdJJ50UhYWFLV0NM7PDyqpVqz6IiO655h22CaGwsJCysrKWroaZ2WFF0rv1zfMhIzMzA5wQzMwscUIwMzPgMB5DMPviiy+oqKhg9+7dLV0Vs1anY8eOFBQU0L59+7zLOCHYYauiooLjjjuOwsJCJLV0dcxajYjgww8/pKKigj59+uRdzoeM7LC1e/duunXr5mRgVockunXr1uTesxOCHdacDMxya87fhhOCmZkBHkOwI0jhtOcP6Po23f71A7q+prjkkku46667KC4uPqjbue+++3jggQcYNGgQjz/++EHdVl0TJ05kzJgxXHnllQdkfQsWLGDdunVMmzaN+fPnc9ppp3HmmWcCh649D3dOCK1A9hdZS34J2ZGhqqqKdu3y+9OeOXMmCxcubNLAY2s1duxYxo4dC8D8+fMZM2ZMTUKw/PiQkVkzbdq0iTPOOIPrrruOoqIiRo4cyWeffQZkfpFW31rlgw8+oPq+W7Nnz2b8+PFcccUV9OnTh/vvv5+7776bgQMHMnToULZv316z/scee4wLLriA/v37s2LFCgB27drFpEmTOPfccxk4cCDPPfdczXqvuuoqrrjiCkaOHLlPXe+++2769+9P//79uffeewH453/+Z9555x3Gjh3LPffcU2v52bNnM27cOEaPHk2/fv346U9/WqteQ4YMYcCAAVx//fXs2bMHgCeffJKzzjqL/v37c+utt9Ys37lzZ37wgx8waNAgRowYQWVl5T71W7VqFRdffDGDBw9m1KhRbNmypdb8PXv2cMoppxARfPzxx7Rp04YlS5YAMGzYMMrLy5k9ezbf/e53efXVV1mwYAG33HILAwYM4M9//jMAzzzzDEOGDOG0007jlVde2acOW7ZsYfjw4QwYMID+/fvXLHPDDTdQXFxMUVERP/nJT2qWLyws5Ec/+hHnn38+xcXFvP7664waNYqvfvWrPPjggzXL3XnnnZx77rmcffbZtcpnq28bv/vd7zj99NO56KKLuPHGGxkzZgxQ/+dgfzkhmO2HDRs2MHXqVNauXcsJJ5zAs88+22iZt956iyeeeIIVK1Zw22238aUvfYnVq1dz/vnnM3fu3Jrldu3axauvvsrMmTOZNGkSADNmzOCyyy5j5cqVvPTSS9xyyy3s2rULgGXLljFnzhwWL15ca3urVq3iV7/6FcuXL+e1117joYceYvXq1Tz44IN8+ctf5qWXXuLmm2/ep54rVqzg8ccfZ82aNTzzzDOUlZWxfv16nn76af77v/+bNWvW0LZtWx5//HE2b97MrbfeyuLFi1mzZg0rV65k/vz5NfsxaNAgXn/9dS6++OJayQUy15N873vfo7S0lFWrVjFp0iRuu+22Wsu0bduW0047jXXr1rF06VIGDx7MK6+8wueff05FRQWnnnpqzbIXXHABY8eO5c4772TNmjV89atfBTI9pxUrVnDvvffuUweAJ554glGjRrFmzRr++Mc/MmDAgJo2Lysr44033uAPf/gDb7zxRk2Z3r17s2zZMoYNG8bEiRMpLS3ltdde48c//jEAL7zwAhs2bGDFihWsWbOGVatW1SSybLm2sXv3bq6//noWLlzI0qVLayXShj4H+8OHjMz2Q58+fWq+OAYPHsymTZsaLXPppZdy3HHHcdxxx9GlSxeuuOIKAM4666xaXzZXX301AMOHD+eTTz7h448/5oUXXmDBggXcddddQObU2/feew+Ayy+/nBNPPHGf7S1dupS///u/p1OnTgB84xvf4JVXXmHgwIEN1vPyyy+nW7duNWWWLl1Ku3btWLVqFeeeey4An332GT169GDlypVccskldO+euYnmP/7jP7JkyRLGjx9PmzZt+Na3vgXAt7/9bb7xjW/U2s7bb7/NW2+9xeWXXw5kegM9e/bcpz7Dhg1jyZIlbNy4kenTp/PQQw9x8cUX19SlMdXbre99Ovfcc5k0aRJffPEF48ePr3lf582bx6xZs6iqqmLLli2sW7eOs88+G6DmENVZ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\n",
+      "text/plain": [
+       "<Figure size 432x288 with 1 Axes>"
+      ]
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "count = Counter(df['CustomerAge'])\n",
+    "\n",
+    "plt.bar(count.keys(), count.values(), label = 'number of people with same age')\n",
+    "\n",
+    "plt.legend()\n",
+    " \n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 95,
+   "id": "8e3db1df",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>count</th>\n",
+       "      <th>mean</th>\n",
+       "      <th>std</th>\n",
+       "      <th>min</th>\n",
+       "      <th>25%</th>\n",
+       "      <th>50%</th>\n",
+       "      <th>75%</th>\n",
+       "      <th>max</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>CustAccountBalance</th>\n",
+       "      <td>984702.0</td>\n",
+       "      <td>106098.849498</td>\n",
+       "      <td>818156.044096</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>4584.1</td>\n",
+       "      <td>16010.04</td>\n",
+       "      <td>53766.58</td>\n",
+       "      <td>1.150355e+08</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>TransactionAmount (INR)</th>\n",
+       "      <td>984702.0</td>\n",
+       "      <td>1452.026805</td>\n",
+       "      <td>6140.609584</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>151.0</td>\n",
+       "      <td>431.00</td>\n",
+       "      <td>1125.00</td>\n",
+       "      <td>1.560035e+06</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>CustomerAge</th>\n",
+       "      <td>984702.0</td>\n",
+       "      <td>31.042339</td>\n",
+       "      <td>8.745263</td>\n",
+       "      <td>16.0</td>\n",
+       "      <td>25.0</td>\n",
+       "      <td>29.00</td>\n",
+       "      <td>34.00</td>\n",
+       "      <td>1.000000e+02</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "                            count           mean            std   min     25%  \\\n",
+       "CustAccountBalance       984702.0  106098.849498  818156.044096   0.0  4584.1   \n",
+       "TransactionAmount (INR)  984702.0    1452.026805    6140.609584   0.0   151.0   \n",
+       "CustomerAge              984702.0      31.042339       8.745263  16.0    25.0   \n",
+       "\n",
+       "                              50%       75%           max  \n",
+       "CustAccountBalance       16010.04  53766.58  1.150355e+08  \n",
+       "TransactionAmount (INR)    431.00   1125.00  1.560035e+06  \n",
+       "CustomerAge                 29.00     34.00  1.000000e+02  "
+      ]
+     },
+     "execution_count": 95,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df.describe().T"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "67217cda",
+   "metadata": {},
+   "source": [
+    "In order to implement a Minhash function we decide to divide the CustomAge data in class of ages. Similar ages should led to similar interest. For this reason, looking at the distribution of ages and using our intuition, it seems to be a good choice to divide in: \n",
+    "\n",
+    " - Age_1 --> 16 $\\leq$ Age $\\leq$ 25\n",
+    " \n",
+    " - Age_2 --> 26 $\\leq$ Age $\\leq$ 35\n",
+    " \n",
+    " - Age_3 --> 36 $\\leq$ Age $\\leq$ 45\n",
+    " \n",
+    " - Age_4 --> 46 $\\leq$ Age $\\leq$ 65\n",
+    " \n",
+    " - Age_5 --> 66 $\\leq$ Age $\\leq$ 100\n",
+    " "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 96,
+   "id": "7117be39",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def class_age(age): \n",
+    "    \n",
+    "    if age <= 25:\n",
+    "        \n",
+    "        age_class = 1\n",
+    "    \n",
+    "    elif age >= 25 and age <= 35: \n",
+    "        \n",
+    "        age_class = 2\n",
+    "        \n",
+    "    elif age >= 36 and age <= 45: \n",
+    "        \n",
+    "        age_class = 3\n",
+    "        \n",
+    "    elif age >= 46 and age <= 65: \n",
+    "        \n",
+    "        age_class = 4\n",
+    "        \n",
+    "    elif age >= 66 and age <= 80: \n",
+    "        \n",
+    "        age_class = 5\n",
+    "        \n",
+    "    elif age >= 81 and age <= 100:\n",
+    "        \n",
+    "        age_class = 6\n",
+    "        \n",
+    "    return age_class      "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 97,
+   "id": "36c20a89",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df['CustomerClassAge'] = df.CustomerAge.apply(lambda x: class_age(x))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 98,
+   "id": "382949ee",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>TransactionID</th>\n",
+       "      <th>CustomerID</th>\n",
+       "      <th>CustomerDOB</th>\n",
+       "      <th>CustGender</th>\n",
+       "      <th>CustLocation</th>\n",
+       "      <th>CustAccountBalance</th>\n",
+       "      <th>TransactionDate</th>\n",
+       "      <th>TransactionAmount (INR)</th>\n",
+       "      <th>CustomerAge</th>\n",
+       "      <th>CustomerClassAge</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>T1</td>\n",
+       "      <td>C5841053</td>\n",
+       "      <td>1994-10-01</td>\n",
+       "      <td>F</td>\n",
+       "      <td>JAMSHEDPUR</td>\n",
+       "      <td>17819.05</td>\n",
+       "      <td>2016-02-08</td>\n",
+       "      <td>25.0</td>\n",
+       "      <td>22</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "  TransactionID CustomerID CustomerDOB CustGender CustLocation  \\\n",
+       "0            T1   C5841053  1994-10-01          F   JAMSHEDPUR   \n",
+       "\n",
+       "   CustAccountBalance TransactionDate  TransactionAmount (INR)  CustomerAge  \\\n",
+       "0            17819.05      2016-02-08                     25.0           22   \n",
+       "\n",
+       "   CustomerClassAge  \n",
+       "0                 1  "
+      ]
+     },
+     "execution_count": 98,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df.head(1)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "29ec37af",
+   "metadata": {},
+   "source": [
+    "# 1.1.2 Define a new ID"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "fc8796d8",
+   "metadata": {},
+   "source": [
+    "This process will be divided in 2 steps: \n",
+    "\n",
+    "    - Check if different people are labelled with the same CustomerID\n",
+    "    - Check if the same people are labelled with different CustomerID"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "d1d52af5",
+   "metadata": {},
+   "source": [
+    "### Different people with the same CustomerID"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 99,
+   "id": "6607d3ef",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>TransactionID</th>\n",
+       "      <th>CustomerID</th>\n",
+       "      <th>CustomerDOB</th>\n",
+       "      <th>CustGender</th>\n",
+       "      <th>CustLocation</th>\n",
+       "      <th>CustAccountBalance</th>\n",
+       "      <th>TransactionDate</th>\n",
+       "      <th>TransactionAmount (INR)</th>\n",
+       "      <th>CustomerAge</th>\n",
+       "      <th>CustomerClassAge</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>173508</th>\n",
+       "      <td>T173509</td>\n",
+       "      <td>C1010011</td>\n",
+       "      <td>1983-05-08</td>\n",
+       "      <td>M</td>\n",
+       "      <td>NEW DELHI</td>\n",
+       "      <td>120180.54</td>\n",
+       "      <td>2016-09-08</td>\n",
+       "      <td>356.0</td>\n",
+       "      <td>33</td>\n",
+       "      <td>2</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>33670</th>\n",
+       "      <td>T33671</td>\n",
+       "      <td>C1010011</td>\n",
+       "      <td>1992-08-19</td>\n",
+       "      <td>F</td>\n",
+       "      <td>NOIDA</td>\n",
+       "      <td>32500.73</td>\n",
+       "      <td>2016-09-26</td>\n",
+       "      <td>4750.0</td>\n",
+       "      <td>24</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>251647</th>\n",
+       "      <td>T251648</td>\n",
+       "      <td>C1010014</td>\n",
+       "      <td>1984-08-19</td>\n",
+       "      <td>M</td>\n",
+       "      <td>MUMBAI</td>\n",
+       "      <td>161848.76</td>\n",
+       "      <td>2016-07-08</td>\n",
+       "      <td>250.0</td>\n",
+       "      <td>32</td>\n",
+       "      <td>2</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>89543</th>\n",
+       "      <td>T89544</td>\n",
+       "      <td>C1010014</td>\n",
+       "      <td>1992-04-06</td>\n",
+       "      <td>F</td>\n",
+       "      <td>MUMBAI</td>\n",
+       "      <td>38377.14</td>\n",
+       "      <td>2016-01-08</td>\n",
+       "      <td>1205.0</td>\n",
+       "      <td>24</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>50880</th>\n",
+       "      <td>T50881</td>\n",
+       "      <td>C1010031</td>\n",
+       "      <td>1984-07-21</td>\n",
+       "      <td>M</td>\n",
+       "      <td>VAPI</td>\n",
+       "      <td>1754.10</td>\n",
+       "      <td>2016-03-08</td>\n",
+       "      <td>404.0</td>\n",
+       "      <td>32</td>\n",
+       "      <td>2</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>169854</th>\n",
+       "      <td>T169855</td>\n",
+       "      <td>C1010031</td>\n",
+       "      <td>1988-09-06</td>\n",
+       "      <td>M</td>\n",
+       "      <td>TRICHY</td>\n",
+       "      <td>8646.21</td>\n",
+       "      <td>2016-04-08</td>\n",
+       "      <td>1460.0</td>\n",
+       "      <td>28</td>\n",
+       "      <td>2</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>560675</th>\n",
+       "      <td>T560676</td>\n",
+       "      <td>C1010035</td>\n",
+       "      <td>1980-09-06</td>\n",
+       "      <td>M</td>\n",
+       "      <td>NAVI MUMBAI</td>\n",
+       "      <td>378013.09</td>\n",
+       "      <td>2016-08-27</td>\n",
+       "      <td>700.0</td>\n",
+       "      <td>36</td>\n",
+       "      <td>3</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>87413</th>\n",
+       "      <td>T87414</td>\n",
+       "      <td>C1010035</td>\n",
+       "      <td>1992-02-03</td>\n",
+       "      <td>M</td>\n",
+       "      <td>MUMBAI</td>\n",
+       "      <td>7284.42</td>\n",
+       "      <td>2016-01-08</td>\n",
+       "      <td>50.0</td>\n",
+       "      <td>24</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>888199</th>\n",
+       "      <td>T888200</td>\n",
+       "      <td>C1010041</td>\n",
+       "      <td>1992-07-13</td>\n",
+       "      <td>F</td>\n",
+       "      <td>LOHIT</td>\n",
+       "      <td>1290.76</td>\n",
+       "      <td>2016-07-09</td>\n",
+       "      <td>20.0</td>\n",
+       "      <td>24</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>113532</th>\n",
+       "      <td>T113533</td>\n",
+       "      <td>C1010041</td>\n",
+       "      <td>1975-09-14</td>\n",
+       "      <td>F</td>\n",
+       "      <td>NOIDA</td>\n",
+       "      <td>746731.94</td>\n",
+       "      <td>2016-06-08</td>\n",
+       "      <td>2397.0</td>\n",
+       "      <td>41</td>\n",
+       "      <td>3</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "       TransactionID CustomerID CustomerDOB CustGender CustLocation  \\\n",
+       "173508       T173509   C1010011  1983-05-08          M    NEW DELHI   \n",
+       "33670         T33671   C1010011  1992-08-19          F        NOIDA   \n",
+       "251647       T251648   C1010014  1984-08-19          M       MUMBAI   \n",
+       "89543         T89544   C1010014  1992-04-06          F       MUMBAI   \n",
+       "50880         T50881   C1010031  1984-07-21          M         VAPI   \n",
+       "169854       T169855   C1010031  1988-09-06          M       TRICHY   \n",
+       "560675       T560676   C1010035  1980-09-06          M  NAVI MUMBAI   \n",
+       "87413         T87414   C1010035  1992-02-03          M       MUMBAI   \n",
+       "888199       T888200   C1010041  1992-07-13          F        LOHIT   \n",
+       "113532       T113533   C1010041  1975-09-14          F        NOIDA   \n",
+       "\n",
+       "        CustAccountBalance TransactionDate  TransactionAmount (INR)  \\\n",
+       "173508           120180.54      2016-09-08                    356.0   \n",
+       "33670             32500.73      2016-09-26                   4750.0   \n",
+       "251647           161848.76      2016-07-08                    250.0   \n",
+       "89543             38377.14      2016-01-08                   1205.0   \n",
+       "50880              1754.10      2016-03-08                    404.0   \n",
+       "169854             8646.21      2016-04-08                   1460.0   \n",
+       "560675           378013.09      2016-08-27                    700.0   \n",
+       "87413              7284.42      2016-01-08                     50.0   \n",
+       "888199             1290.76      2016-07-09                     20.0   \n",
+       "113532           746731.94      2016-06-08                   2397.0   \n",
+       "\n",
+       "        CustomerAge  CustomerClassAge  \n",
+       "173508           33                 2  \n",
+       "33670            24                 1  \n",
+       "251647           32                 2  \n",
+       "89543            24                 1  \n",
+       "50880            32                 2  \n",
+       "169854           28                 2  \n",
+       "560675           36                 3  \n",
+       "87413            24                 1  \n",
+       "888199           24                 1  \n",
+       "113532           41                 3  "
+      ]
+     },
+     "execution_count": 99,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "a = df.groupby('CustomerID').TransactionID.count()  #series with number of transaction per CustomerID\n",
+    "\n",
+    "df[df.CustomerID.isin(a[a>1].index)].sort_values(by=\"CustomerID\").head(10) #take customers with more than 1 transaction"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "9ca806a0",
+   "metadata": {},
+   "source": [
+    "We can see that transaction addressed to the same CustomerID are instead related to different people but labeled with the same username. "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "5d1747fe",
+   "metadata": {},
+   "source": [
+    "So we can create a new 'Identity' linking CustomerID and ages and store these values as integers:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 100,
+   "id": "52bcd134",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df['Identity'] = (df['CustomerID'].map(str) + df['CustomerAge'].map(str)).apply(lambda x: x.replace('C', '')).map(int)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "0e3b0e29",
+   "metadata": {},
+   "source": [
+    "Now we can drop the column that we don't need: "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 101,
+   "id": "0ad73353",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "del df['CustomerID'], df['CustomerAge']"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 102,
+   "id": "92c65b7b",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>TransactionID</th>\n",
+       "      <th>CustomerDOB</th>\n",
+       "      <th>CustGender</th>\n",
+       "      <th>CustLocation</th>\n",
+       "      <th>CustAccountBalance</th>\n",
+       "      <th>TransactionDate</th>\n",
+       "      <th>TransactionAmount (INR)</th>\n",
+       "      <th>CustomerClassAge</th>\n",
+       "      <th>Identity</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>T1</td>\n",
+       "      <td>1994-10-01</td>\n",
+       "      <td>F</td>\n",
+       "      <td>JAMSHEDPUR</td>\n",
+       "      <td>17819.05</td>\n",
+       "      <td>2016-02-08</td>\n",
+       "      <td>25.0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>584105322</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>T2</td>\n",
+       "      <td>1957-04-04</td>\n",
+       "      <td>M</td>\n",
+       "      <td>JHAJJAR</td>\n",
+       "      <td>2270.69</td>\n",
+       "      <td>2016-02-08</td>\n",
+       "      <td>27999.0</td>\n",
+       "      <td>4</td>\n",
+       "      <td>214276359</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>T3</td>\n",
+       "      <td>1996-11-26</td>\n",
+       "      <td>F</td>\n",
+       "      <td>MUMBAI</td>\n",
+       "      <td>17874.44</td>\n",
+       "      <td>2016-02-08</td>\n",
+       "      <td>459.0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>441706820</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>T4</td>\n",
+       "      <td>1973-09-14</td>\n",
+       "      <td>F</td>\n",
+       "      <td>MUMBAI</td>\n",
+       "      <td>866503.21</td>\n",
+       "      <td>2016-02-08</td>\n",
+       "      <td>2060.0</td>\n",
+       "      <td>3</td>\n",
+       "      <td>534238043</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>T5</td>\n",
+       "      <td>1988-03-24</td>\n",
+       "      <td>F</td>\n",
+       "      <td>NAVI MUMBAI</td>\n",
+       "      <td>6714.43</td>\n",
+       "      <td>2016-02-08</td>\n",
+       "      <td>1762.5</td>\n",
+       "      <td>2</td>\n",
+       "      <td>903123428</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "  TransactionID CustomerDOB CustGender CustLocation  CustAccountBalance  \\\n",
+       "0            T1  1994-10-01          F   JAMSHEDPUR            17819.05   \n",
+       "1            T2  1957-04-04          M      JHAJJAR             2270.69   \n",
+       "2            T3  1996-11-26          F       MUMBAI            17874.44   \n",
+       "3            T4  1973-09-14          F       MUMBAI           866503.21   \n",
+       "4            T5  1988-03-24          F  NAVI MUMBAI             6714.43   \n",
+       "\n",
+       "  TransactionDate  TransactionAmount (INR)  CustomerClassAge   Identity  \n",
+       "0      2016-02-08                     25.0                 1  584105322  \n",
+       "1      2016-02-08                  27999.0                 4  214276359  \n",
+       "2      2016-02-08                    459.0                 1  441706820  \n",
+       "3      2016-02-08                   2060.0                 3  534238043  \n",
+       "4      2016-02-08                   1762.5                 2  903123428  "
+      ]
+     },
+     "execution_count": 102,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 136,
+   "id": "e0657199",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#df['CustomerDOB'] = df['CustomerDOB'].apply(lambda x: x.strftime('%Y-%m-%d')) non necessario"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "6e4880a2",
+   "metadata": {},
+   "source": [
+    "### Same people with different Identity"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "42bd2a73",
+   "metadata": {},
+   "source": [
+    "Now we can check for same people who are labelled with different Identity: "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 155,
+   "id": "a58d5855",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>CustomerDOB</th>\n",
+       "      <th>CustAccountBalance</th>\n",
+       "      <th>CustGender</th>\n",
+       "      <th>CustLocation</th>\n",
+       "      <th>Identity</th>\n",
+       "      <th>TransactionAmount (INR)</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>1916-02-22</td>\n",
+       "      <td>16205.90</td>\n",
+       "      <td>M</td>\n",
+       "      <td>SURAT</td>\n",
+       "      <td>2846955100</td>\n",
+       "      <td>460.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>1916-02-22</td>\n",
+       "      <td>16205.90</td>\n",
+       "      <td>M</td>\n",
+       "      <td>SURAT</td>\n",
+       "      <td>6946973100</td>\n",
+       "      <td>294.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>1918-03-05</td>\n",
+       "      <td>11725.34</td>\n",
+       "      <td>F</td>\n",
+       "      <td>MUMBAI</td>\n",
+       "      <td>263882598</td>\n",
+       "      <td>250.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>1919-12-15</td>\n",
+       "      <td>27081.15</td>\n",
+       "      <td>F</td>\n",
+       "      <td>DELHI</td>\n",
+       "      <td>492554497</td>\n",
+       "      <td>12580.29</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>1919-12-15</td>\n",
+       "      <td>27081.15</td>\n",
+       "      <td>F</td>\n",
+       "      <td>DELHI</td>\n",
+       "      <td>762555297</td>\n",
+       "      <td>500.00</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "  CustomerDOB  CustAccountBalance CustGender CustLocation    Identity  \\\n",
+       "0  1916-02-22            16205.90          M        SURAT  2846955100   \n",
+       "1  1916-02-22            16205.90          M        SURAT  6946973100   \n",
+       "2  1918-03-05            11725.34          F       MUMBAI   263882598   \n",
+       "3  1919-12-15            27081.15          F        DELHI   492554497   \n",
+       "4  1919-12-15            27081.15          F        DELHI   762555297   \n",
+       "\n",
+       "   TransactionAmount (INR)  \n",
+       "0                   460.00  \n",
+       "1                   294.00  \n",
+       "2                   250.00  \n",
+       "3                 12580.29  \n",
+       "4                   500.00  "
+      ]
+     },
+     "execution_count": 155,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 156,
+   "id": "84372371",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>CustomerDOB</th>\n",
+       "      <th>CustAccountBalance</th>\n",
+       "      <th>CustGender</th>\n",
+       "      <th>CustLocation</th>\n",
+       "      <th>Identity</th>\n",
+       "      <th>TransactionAmount (INR)</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>1916-02-22</td>\n",
+       "      <td>16205.90</td>\n",
+       "      <td>M</td>\n",
+       "      <td>SURAT</td>\n",
+       "      <td>2846955100</td>\n",
+       "      <td>460.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>1916-02-22</td>\n",
+       "      <td>16205.90</td>\n",
+       "      <td>M</td>\n",
+       "      <td>SURAT</td>\n",
+       "      <td>6946973100</td>\n",
+       "      <td>294.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>1918-03-05</td>\n",
+       "      <td>11725.34</td>\n",
+       "      <td>F</td>\n",
+       "      <td>MUMBAI</td>\n",
+       "      <td>263882598</td>\n",
+       "      <td>250.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>1919-12-15</td>\n",
+       "      <td>27081.15</td>\n",
+       "      <td>F</td>\n",
+       "      <td>DELHI</td>\n",
+       "      <td>492554497</td>\n",
+       "      <td>12580.29</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>1919-12-15</td>\n",
+       "      <td>27081.15</td>\n",
+       "      <td>F</td>\n",
+       "      <td>DELHI</td>\n",
+       "      <td>762555297</td>\n",
+       "      <td>500.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>5</th>\n",
+       "      <td>1919-12-15</td>\n",
+       "      <td>27081.15</td>\n",
+       "      <td>F</td>\n",
+       "      <td>DELHI</td>\n",
+       "      <td>522553497</td>\n",
+       "      <td>10.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>6</th>\n",
+       "      <td>1919-12-15</td>\n",
+       "      <td>27081.15</td>\n",
+       "      <td>F</td>\n",
+       "      <td>DELHI</td>\n",
+       "      <td>102551397</td>\n",
+       "      <td>10.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>7</th>\n",
+       "      <td>1919-12-15</td>\n",
+       "      <td>27081.15</td>\n",
+       "      <td>F</td>\n",
+       "      <td>DELHI</td>\n",
+       "      <td>262559097</td>\n",
+       "      <td>1200.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>8</th>\n",
+       "      <td>1919-12-15</td>\n",
+       "      <td>27081.15</td>\n",
+       "      <td>F</td>\n",
+       "      <td>DELHI</td>\n",
+       "      <td>292557997</td>\n",
+       "      <td>10.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>9</th>\n",
+       "      <td>1919-12-15</td>\n",
+       "      <td>27081.15</td>\n",
+       "      <td>F</td>\n",
+       "      <td>DELHI</td>\n",
+       "      <td>472557497</td>\n",
+       "      <td>1000.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>10</th>\n",
+       "      <td>1920-01-04</td>\n",
+       "      <td>18952.79</td>\n",
+       "      <td>M</td>\n",
+       "      <td>CHANDIGARH</td>\n",
+       "      <td>522442996</td>\n",
+       "      <td>9514.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>11</th>\n",
+       "      <td>1920-06-03</td>\n",
+       "      <td>66905.92</td>\n",
+       "      <td>M</td>\n",
+       "      <td>DELHI</td>\n",
+       "      <td>683978896</td>\n",
+       "      <td>1132.41</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>12</th>\n",
+       "      <td>1921-01-19</td>\n",
+       "      <td>1125922.25</td>\n",
+       "      <td>M</td>\n",
+       "      <td>NEW DELHI</td>\n",
+       "      <td>441767995</td>\n",
+       "      <td>4570.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>13</th>\n",
+       "      <td>1921-01-19</td>\n",
+       "      <td>1125922.25</td>\n",
+       "      <td>M</td>\n",
+       "      <td>NEW DELHI</td>\n",
+       "      <td>641765695</td>\n",
+       "      <td>6300.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>14</th>\n",
+       "      <td>1921-01-19</td>\n",
+       "      <td>1125922.25</td>\n",
+       "      <td>M</td>\n",
+       "      <td>NEW DELHI</td>\n",
+       "      <td>421763195</td>\n",
+       "      <td>2460.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>15</th>\n",
+       "      <td>1921-01-19</td>\n",
+       "      <td>1125922.25</td>\n",
+       "      <td>M</td>\n",
+       "      <td>NEW DELHI</td>\n",
+       "      <td>451766195</td>\n",
+       "      <td>957.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>16</th>\n",
+       "      <td>1921-01-19</td>\n",
+       "      <td>1125922.25</td>\n",
+       "      <td>M</td>\n",
+       "      <td>NEW DELHI</td>\n",
+       "      <td>701764695</td>\n",
+       "      <td>995.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>17</th>\n",
+       "      <td>1921-01-19</td>\n",
+       "      <td>1125922.25</td>\n",
+       "      <td>M</td>\n",
+       "      <td>NEW DELHI</td>\n",
+       "      <td>171764295</td>\n",
+       "      <td>2875.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>18</th>\n",
+       "      <td>1921-01-19</td>\n",
+       "      <td>1125922.25</td>\n",
+       "      <td>M</td>\n",
+       "      <td>NEW DELHI</td>\n",
+       "      <td>511767995</td>\n",
+       "      <td>1102.00</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>19</th>\n",
+       "      <td>1921-01-19</td>\n",
+       "      <td>1125922.25</td>\n",
+       "      <td>M</td>\n",
+       "      <td>NEW DELHI</td>\n",
+       "      <td>791765995</td>\n",
+       "      <td>5023.00</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   CustomerDOB  CustAccountBalance CustGender CustLocation    Identity  \\\n",
+       "0   1916-02-22            16205.90          M        SURAT  2846955100   \n",
+       "1   1916-02-22            16205.90          M        SURAT  6946973100   \n",
+       "2   1918-03-05            11725.34          F       MUMBAI   263882598   \n",
+       "3   1919-12-15            27081.15          F        DELHI   492554497   \n",
+       "4   1919-12-15            27081.15          F        DELHI   762555297   \n",
+       "5   1919-12-15            27081.15          F        DELHI   522553497   \n",
+       "6   1919-12-15            27081.15          F        DELHI   102551397   \n",
+       "7   1919-12-15            27081.15          F        DELHI   262559097   \n",
+       "8   1919-12-15            27081.15          F        DELHI   292557997   \n",
+       "9   1919-12-15            27081.15          F        DELHI   472557497   \n",
+       "10  1920-01-04            18952.79          M   CHANDIGARH   522442996   \n",
+       "11  1920-06-03            66905.92          M        DELHI   683978896   \n",
+       "12  1921-01-19          1125922.25          M    NEW DELHI   441767995   \n",
+       "13  1921-01-19          1125922.25          M    NEW DELHI   641765695   \n",
+       "14  1921-01-19          1125922.25          M    NEW DELHI   421763195   \n",
+       "15  1921-01-19          1125922.25          M    NEW DELHI   451766195   \n",
+       "16  1921-01-19          1125922.25          M    NEW DELHI   701764695   \n",
+       "17  1921-01-19          1125922.25          M    NEW DELHI   171764295   \n",
+       "18  1921-01-19          1125922.25          M    NEW DELHI   511767995   \n",
+       "19  1921-01-19          1125922.25          M    NEW DELHI   791765995   \n",
+       "\n",
+       "    TransactionAmount (INR)  \n",
+       "0                    460.00  \n",
+       "1                    294.00  \n",
+       "2                    250.00  \n",
+       "3                  12580.29  \n",
+       "4                    500.00  \n",
+       "5                     10.00  \n",
+       "6                     10.00  \n",
+       "7                   1200.00  \n",
+       "8                     10.00  \n",
+       "9                   1000.00  \n",
+       "10                  9514.00  \n",
+       "11                  1132.41  \n",
+       "12                  4570.00  \n",
+       "13                  6300.00  \n",
+       "14                  2460.00  \n",
+       "15                   957.00  \n",
+       "16                   995.00  \n",
+       "17                  2875.00  \n",
+       "18                  1102.00  \n",
+       "19                  5023.00  "
+      ]
+     },
+     "execution_count": 156,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df = df.sort_values(by = ['CustomerDOB', 'CustAccountBalance', 'CustGender', 'CustLocation'], ascending = True)[['CustomerDOB', 'CustAccountBalance', 'CustGender', 'CustLocation', 'Identity', 'TransactionAmount (INR)']].reset_index(drop = True).head(20)\n",
+    "df"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "6ebaf05f",
+   "metadata": {},
+   "source": [
+    "We can see that ther are people who are labelled with different identity but have all the other field identical. So we can say that, with high probability, they are the same person. So we can replace those rows with a rows with the TransactionAmount equal to the mean of the TransactionAmount:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 153,
+   "id": "a7c9c7f9",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "new_df = pd.DataFrame(columns=list(df))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 159,
+   "id": "7f072f16",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "3.25"
+      ]
+     },
+     "execution_count": 159,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "a = [3, 4, 2, 4]\n",
+    "\n",
+    "mean(a)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 163,
+   "id": "45aed618",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      " 60%|█████████████████████████▊                 | 12/20 [00:00<00:00, 42.55it/s]\n"
+     ]
+    },
+    {
+     "ename": "KeyError",
+     "evalue": "20",
+     "output_type": "error",
+     "traceback": [
+      "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+      "\u001b[0;31mValueError\u001b[0m                                Traceback (most recent call last)",
+      "File \u001b[0;32m~/opt/anaconda3/lib/python3.9/site-packages/pandas/core/indexes/range.py:385\u001b[0m, in \u001b[0;36mRangeIndex.get_loc\u001b[0;34m(self, key, method, tolerance)\u001b[0m\n\u001b[1;32m    384\u001b[0m \u001b[38;5;28;01mtry\u001b[39;00m:\n\u001b[0;32m--> 385\u001b[0m     \u001b[38;5;28;01mreturn\u001b[39;00m \u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43m_range\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mindex\u001b[49m\u001b[43m(\u001b[49m\u001b[43mnew_key\u001b[49m\u001b[43m)\u001b[49m\n\u001b[1;32m    386\u001b[0m \u001b[38;5;28;01mexcept\u001b[39;00m \u001b[38;5;167;01mValueError\u001b[39;00m \u001b[38;5;28;01mas\u001b[39;00m err:\n",
+      "\u001b[0;31mValueError\u001b[0m: 20 is not in range",
+      "\nThe above exception was the direct cause of the following exception:\n",
+      "\u001b[0;31mKeyError\u001b[0m                                  Traceback (most recent call last)",
+      "Input \u001b[0;32mIn [163]\u001b[0m, in \u001b[0;36m<cell line: 1>\u001b[0;34m()\u001b[0m\n\u001b[1;32m      5\u001b[0m flag \u001b[38;5;241m=\u001b[39m \u001b[38;5;28;01mFalse\u001b[39;00m\n\u001b[1;32m      7\u001b[0m \u001b[38;5;28;01mwhile\u001b[39;00m flag \u001b[38;5;241m==\u001b[39m \u001b[38;5;28;01mFalse\u001b[39;00m:\n\u001b[0;32m----> 9\u001b[0m     \u001b[38;5;28;01mif\u001b[39;00m df[\u001b[38;5;124m'\u001b[39m\u001b[38;5;124mCustomerDOB\u001b[39m\u001b[38;5;124m'\u001b[39m][index] \u001b[38;5;241m==\u001b[39m \u001b[43mdf\u001b[49m\u001b[43m[\u001b[49m\u001b[38;5;124;43m'\u001b[39;49m\u001b[38;5;124;43mCustomerDOB\u001b[39;49m\u001b[38;5;124;43m'\u001b[39;49m\u001b[43m]\u001b[49m\u001b[43m[\u001b[49m\u001b[43mindex\u001b[49m\u001b[38;5;241;43m+\u001b[39;49m\u001b[38;5;241;43m1\u001b[39;49m\u001b[43m]\u001b[49m \u001b[38;5;129;01mand\u001b[39;00m df[\u001b[38;5;124m'\u001b[39m\u001b[38;5;124mCustAccountBalance\u001b[39m\u001b[38;5;124m'\u001b[39m][index] \u001b[38;5;241m==\u001b[39m df[\u001b[38;5;124m'\u001b[39m\u001b[38;5;124mCustAccountBalance\u001b[39m\u001b[38;5;124m'\u001b[39m][index\u001b[38;5;241m+\u001b[39m\u001b[38;5;241m1\u001b[39m] \u001b[38;5;129;01mand\u001b[39;00m df[\u001b[38;5;124m'\u001b[39m\u001b[38;5;124mCustLocation\u001b[39m\u001b[38;5;124m'\u001b[39m][index] \u001b[38;5;241m==\u001b[39m df[\u001b[38;5;124m'\u001b[39m\u001b[38;5;124mCustLocation\u001b[39m\u001b[38;5;124m'\u001b[39m][index\u001b[38;5;241m+\u001b[39m\u001b[38;5;241m1\u001b[39m] \u001b[38;5;129;01mand\u001b[39;00m df[\u001b[38;5;124m'\u001b[39m\u001b[38;5;124mCustGender\u001b[39m\u001b[38;5;124m'\u001b[39m][index] \u001b[38;5;241m==\u001b[39m df[\u001b[38;5;124m'\u001b[39m\u001b[38;5;124mCustGender\u001b[39m\u001b[38;5;124m'\u001b[39m][index\u001b[38;5;241m+\u001b[39m\u001b[38;5;241m1\u001b[39m]:\n\u001b[1;32m     11\u001b[0m         transaction_list\u001b[38;5;241m.\u001b[39mappend([df[\u001b[38;5;124m'\u001b[39m\u001b[38;5;124mTransactionAmount (INR)\u001b[39m\u001b[38;5;124m'\u001b[39m][index\u001b[38;5;241m+\u001b[39m\u001b[38;5;241m1\u001b[39m]])\n\u001b[1;32m     13\u001b[0m         index \u001b[38;5;241m+\u001b[39m\u001b[38;5;241m=\u001b[39m \u001b[38;5;241m1\u001b[39m\n",
+      "File \u001b[0;32m~/opt/anaconda3/lib/python3.9/site-packages/pandas/core/series.py:958\u001b[0m, in \u001b[0;36mSeries.__getitem__\u001b[0;34m(self, key)\u001b[0m\n\u001b[1;32m    955\u001b[0m     \u001b[38;5;28;01mreturn\u001b[39;00m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_values[key]\n\u001b[1;32m    957\u001b[0m \u001b[38;5;28;01melif\u001b[39;00m key_is_scalar:\n\u001b[0;32m--> 958\u001b[0m     \u001b[38;5;28;01mreturn\u001b[39;00m \u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43m_get_value\u001b[49m\u001b[43m(\u001b[49m\u001b[43mkey\u001b[49m\u001b[43m)\u001b[49m\n\u001b[1;32m    960\u001b[0m \u001b[38;5;28;01mif\u001b[39;00m is_hashable(key):\n\u001b[1;32m    961\u001b[0m     \u001b[38;5;66;03m# Otherwise index.get_value will raise InvalidIndexError\u001b[39;00m\n\u001b[1;32m    962\u001b[0m     \u001b[38;5;28;01mtry\u001b[39;00m:\n\u001b[1;32m    963\u001b[0m         \u001b[38;5;66;03m# For labels that don't resolve as scalars like tuples and frozensets\u001b[39;00m\n",
+      "File \u001b[0;32m~/opt/anaconda3/lib/python3.9/site-packages/pandas/core/series.py:1069\u001b[0m, in \u001b[0;36mSeries._get_value\u001b[0;34m(self, label, takeable)\u001b[0m\n\u001b[1;32m   1066\u001b[0m     \u001b[38;5;28;01mreturn\u001b[39;00m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_values[label]\n\u001b[1;32m   1068\u001b[0m \u001b[38;5;66;03m# Similar to Index.get_value, but we do not fall back to positional\u001b[39;00m\n\u001b[0;32m-> 1069\u001b[0m loc \u001b[38;5;241m=\u001b[39m \u001b[38;5;28;43mself\u001b[39;49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mindex\u001b[49m\u001b[38;5;241;43m.\u001b[39;49m\u001b[43mget_loc\u001b[49m\u001b[43m(\u001b[49m\u001b[43mlabel\u001b[49m\u001b[43m)\u001b[49m\n\u001b[1;32m   1070\u001b[0m \u001b[38;5;28;01mreturn\u001b[39;00m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39mindex\u001b[38;5;241m.\u001b[39m_get_values_for_loc(\u001b[38;5;28mself\u001b[39m, loc, label)\n",
+      "File \u001b[0;32m~/opt/anaconda3/lib/python3.9/site-packages/pandas/core/indexes/range.py:387\u001b[0m, in \u001b[0;36mRangeIndex.get_loc\u001b[0;34m(self, key, method, tolerance)\u001b[0m\n\u001b[1;32m    385\u001b[0m         \u001b[38;5;28;01mreturn\u001b[39;00m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_range\u001b[38;5;241m.\u001b[39mindex(new_key)\n\u001b[1;32m    386\u001b[0m     \u001b[38;5;28;01mexcept\u001b[39;00m \u001b[38;5;167;01mValueError\u001b[39;00m \u001b[38;5;28;01mas\u001b[39;00m err:\n\u001b[0;32m--> 387\u001b[0m         \u001b[38;5;28;01mraise\u001b[39;00m \u001b[38;5;167;01mKeyError\u001b[39;00m(key) \u001b[38;5;28;01mfrom\u001b[39;00m \u001b[38;5;21;01merr\u001b[39;00m\n\u001b[1;32m    388\u001b[0m \u001b[38;5;28mself\u001b[39m\u001b[38;5;241m.\u001b[39m_check_indexing_error(key)\n\u001b[1;32m    389\u001b[0m \u001b[38;5;28;01mraise\u001b[39;00m \u001b[38;5;167;01mKeyError\u001b[39;00m(key)\n",
+      "\u001b[0;31mKeyError\u001b[0m: 20"
+     ]
+    }
+   ],
+   "source": [
+    "for index in tq(range(len(df))):\n",
+    "    \n",
+    "    transaction_list = [df['TransactionAmount (INR)'][index]]\n",
+    "    \n",
+    "    flag = False\n",
+    "    \n",
+    "    while flag == False:\n",
+    "        \n",
+    "        if df['CustomerDOB'][index] == df['CustomerDOB'][index+1] and df['CustAccountBalance'][index] == df['CustAccountBalance'][index+1] and df['CustLocation'][index] == df['CustLocation'][index+1] and df['CustGender'][index] == df['CustGender'][index+1]:\n",
+    "            \n",
+    "            transaction_list.append([df['TransactionAmount (INR)'][index+1]])\n",
+    "            \n",
+    "            index += 1\n",
+    "            \n",
+    "        else: \n",
+    "            \n",
+    "            flag = True\n",
+    "            \n",
+    "    new_df.append({'CustGender': np.mean(transaction_list), 'CustAccountBalance': [df['CustAccountBalance'][index]], 'CustGender': [df['CustGender'][index]], 'Identity': [df['Identity'][index]]}, ignore_index=True)\n",
+    "    \n",
+    "    index +=1"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 141,
+   "id": "5cb19ea5",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "['CustomerDOB',\n",
+       " 'CustAccountBalance',\n",
+       " 'CustGender',\n",
+       " 'CustLocation',\n",
+       " 'Identity',\n",
+       " 'TransactionAmount (INR)']"
+      ]
+     },
+     "execution_count": 141,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "list(df)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "29eab6ba",
+   "metadata": {},
+   "source": [
+    "# 1.1.3 Multiple transaction"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "59397cc9",
+   "metadata": {},
+   "source": [
+    "Now we can search for multiple transactions referred to each Identity:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 161,
+   "id": "ca0fc360",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>TransactionID</th>\n",
+       "      <th>CustGender</th>\n",
+       "      <th>CustAccountBalance</th>\n",
+       "      <th>TransactionAmount (INR)</th>\n",
+       "      <th>CustomerClassAge</th>\n",
+       "      <th>Identity</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>214918</th>\n",
+       "      <td>T214919</td>\n",
+       "      <td>M</td>\n",
+       "      <td>11787.98</td>\n",
+       "      <td>840.00</td>\n",
+       "      <td>2</td>\n",
+       "      <td>101011729</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1027304</th>\n",
+       "      <td>T1027305</td>\n",
+       "      <td>M</td>\n",
+       "      <td>7634.23</td>\n",
+       "      <td>275.00</td>\n",
+       "      <td>2</td>\n",
+       "      <td>101011729</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>839061</th>\n",
+       "      <td>T839062</td>\n",
+       "      <td>M</td>\n",
+       "      <td>45856.24</td>\n",
+       "      <td>712.00</td>\n",
+       "      <td>1</td>\n",
+       "      <td>101063625</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>731718</th>\n",
+       "      <td>T731719</td>\n",
+       "      <td>M</td>\n",
+       "      <td>45856.24</td>\n",
+       "      <td>655.00</td>\n",
+       "      <td>1</td>\n",
+       "      <td>101063625</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>353117</th>\n",
+       "      <td>T353118</td>\n",
+       "      <td>M</td>\n",
+       "      <td>25331.36</td>\n",
+       "      <td>50.00</td>\n",
+       "      <td>4</td>\n",
+       "      <td>101098855</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>...</th>\n",
+       "      <td>...</td>\n",
+       "      <td>...</td>\n",
+       "      <td>...</td>\n",
+       "      <td>...</td>\n",
+       "      <td>...</td>\n",
+       "      <td>...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>150732</th>\n",
+       "      <td>T150733</td>\n",
+       "      <td>M</td>\n",
+       "      <td>5277.54</td>\n",
+       "      <td>53.00</td>\n",
+       "      <td>2</td>\n",
+       "      <td>907577727</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>667749</th>\n",
+       "      <td>T667750</td>\n",
+       "      <td>F</td>\n",
+       "      <td>98044.88</td>\n",
+       "      <td>300.00</td>\n",
+       "      <td>1</td>\n",
+       "      <td>908302125</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>619072</th>\n",
+       "      <td>T619073</td>\n",
+       "      <td>F</td>\n",
+       "      <td>98044.88</td>\n",
+       "      <td>249.39</td>\n",
+       "      <td>1</td>\n",
+       "      <td>908302125</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>843052</th>\n",
+       "      <td>T843053</td>\n",
+       "      <td>M</td>\n",
+       "      <td>104897.67</td>\n",
+       "      <td>2250.00</td>\n",
+       "      <td>2</td>\n",
+       "      <td>908443129</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>645838</th>\n",
+       "      <td>T645839</td>\n",
+       "      <td>M</td>\n",
+       "      <td>13037.57</td>\n",
+       "      <td>59.00</td>\n",
+       "      <td>2</td>\n",
+       "      <td>908443129</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "<p>17132 rows × 6 columns</p>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "        TransactionID CustGender  CustAccountBalance  TransactionAmount (INR)  \\\n",
+       "214918        T214919          M            11787.98                   840.00   \n",
+       "1027304      T1027305          M             7634.23                   275.00   \n",
+       "839061        T839062          M            45856.24                   712.00   \n",
+       "731718        T731719          M            45856.24                   655.00   \n",
+       "353117        T353118          M            25331.36                    50.00   \n",
+       "...               ...        ...                 ...                      ...   \n",
+       "150732        T150733          M             5277.54                    53.00   \n",
+       "667749        T667750          F            98044.88                   300.00   \n",
+       "619072        T619073          F            98044.88                   249.39   \n",
+       "843052        T843053          M           104897.67                  2250.00   \n",
+       "645838        T645839          M            13037.57                    59.00   \n",
+       "\n",
+       "         CustomerClassAge   Identity  \n",
+       "214918                  2  101011729  \n",
+       "1027304                 2  101011729  \n",
+       "839061                  1  101063625  \n",
+       "731718                  1  101063625  \n",
+       "353117                  4  101098855  \n",
+       "...                   ...        ...  \n",
+       "150732                  2  907577727  \n",
+       "667749                  1  908302125  \n",
+       "619072                  1  908302125  \n",
+       "843052                  2  908443129  \n",
+       "645838                  2  908443129  \n",
+       "\n",
+       "[17132 rows x 6 columns]"
+      ]
+     },
+     "execution_count": 161,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "a = df.groupby('Identity').TransactionID.count()\n",
+    "\n",
+    "df[df.Identity.isin(a[a > 1].index)].sort_values(by = 'Identity') #take customers with more than 1 transaction"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "b2f01c41",
+   "metadata": {},
+   "source": [
+    "We can see that the maximum number of transaction per person is 3:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 162,
+   "id": "c5a724d5",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "3"
+      ]
+     },
+     "execution_count": 162,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df[df.Identity.isin(a[a > 1].index)].groupby('Identity').TransactionID.count().max()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "3cac0850",
+   "metadata": {},
+   "source": [
+    "We decided to substitute multiple transactions referred to the same identity with the mean of the values in columns 'Transaction amount (INR)' and 'CustAccountBalance': "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 174,
+   "id": "63cd28ee",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "863449029"
+      ]
+     },
+     "execution_count": 174,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "id_multitrans = list(set(df[df.Identity.isin(a[a > 1].index)].Identity)) #find identity with multiple transaction\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 179,
+   "id": "34e392a6",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#This function find the mean of Balance and transaction amount of account with the same ID and replace the multiple \n",
+    "#transaction referred to a single account with one transaction that summarize data referred to it. \n",
+    "\n",
+    "def replace_row(data, ID):\n",
+    "        \n",
+    "    new_inr =  data.loc[data['Identity'] == ID]['TransactionAmount (INR)'].mean()\n",
+    "    \n",
+    "    new_balance = data.loc[data['Identity'] == ID]['CustAccountBalance'].mean()\n",
+    "    \n",
+    "    new_row = {'CustGender': dat a.loc[data['Identity'] == ID]['CustGender'].head(1).item(), 'CustAccountBalance': new_balance, 'TransactionAmount (INR)': new_inr, 'CustomerClassAge': data.loc[data['Identity'] == ID]['CustomerClassAge'].head(1).item(), 'Identity': ID}\n",
+    "    \n",
+    "    data.drop(data[data['Identity'] == ID].index, inplace = True)\n",
+    "    \n",
+    "    data = data.append(new_row, ignore_index=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "3e9be571",
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "[<matplotlib.lines.Line2D at 0x7f8e00f20ac0>]"
+      ]
+     },
+     "execution_count": 197,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "plt.plot(df['TransactionID'],df['CustAccountBalance'])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "d0c4fcc4",
+   "metadata": {},
+   "source": [
+    "Now we can use this function looping on the identity that have done multiple transaction: "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 180,
+   "id": "64983d66",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "100%|███████████████████████████████████████| 5324/5324 [16:55<00:00,  5.24it/s]\n"
+     ]
+    }
+   ],
+   "source": [
+    "for i in tq(range(len(id_multitrans))):\n",
+    "    \n",
+    "    replace_row(df, id_multitrans[i])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "6950e876",
+   "metadata": {},
+   "outputs": [
+    {
+     "ename": "NameError",
+     "evalue": "name 'df' is not defined",
+     "output_type": "error",
+     "traceback": [
+      "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+      "\u001b[0;31mNameError\u001b[0m                                 Traceback (most recent call last)",
+      "Input \u001b[0;32mIn [1]\u001b[0m, in \u001b[0;36m<cell line: 1>\u001b[0;34m()\u001b[0m\n\u001b[0;32m----> 1\u001b[0m \u001b[43mdf\u001b[49m\u001b[38;5;241m.\u001b[39mto_csv(\u001b[38;5;124m'\u001b[39m\u001b[38;5;124m/Users/giacomo/Desktop/dataf\u001b[39m\u001b[38;5;124m'\u001b[39m)\n",
+      "\u001b[0;31mNameError\u001b[0m: name 'df' is not defined"
+     ]
+    }
+   ],
+   "source": [
+    "df.to_csv('/Users/giacomo/Desktop/dataf')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 181,
+   "id": "c7d1012c",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>TransactionID</th>\n",
+       "      <th>CustGender</th>\n",
+       "      <th>CustAccountBalance</th>\n",
+       "      <th>TransactionAmount (INR)</th>\n",
+       "      <th>CustomerClassAge</th>\n",
+       "      <th>Identity</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "Empty DataFrame\n",
+       "Columns: [TransactionID, CustGender, CustAccountBalance, TransactionAmount (INR), CustomerClassAge, Identity]\n",
+       "Index: []"
+      ]
+     },
+     "execution_count": 181,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "a = df.groupby('Identity').TransactionID.count()\n",
+    "\n",
+    "df[df.Identity.isin(a[a > 1].index)].sort_values(by = 'Identity')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "95fd210f",
+   "metadata": {},
+   "source": [
+    "# 1.1.4 Cust Gender"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "ad2a000e",
+   "metadata": {},
+   "source": [
+    "Now we decide to go throgh the CustGender to rearrange it into 0/1 values: "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "23526fec",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df['CustGender'].value_counts()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "3abfc530",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df['CustGender'].value_counts().plot(kind='pie',autopct='%.2f')\n",
+    "\n",
+    "plt.legend()\n",
+    " \n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "59784c35",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df['CustGender'] = df.CustGender.apply(lambda x: 1 if x == 'M' else 0)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "81789085",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "aa47674f",
+   "metadata": {},
+   "source": [
+    "# 1.1.5 Balance and TransactionAmount"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "ed778fc0",
+   "metadata": {},
+   "source": [
+    "Now we can go through the Transaction Amount and CustAccountBalance. First of all we cast them into int:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "2f35bddc",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df['TransactionAmount (INR)'] = df['TransactionAmount (INR)'].astype(int)\n",
+    "\n",
+    "df['CustAccountBalance'] = df['CustAccountBalance'].astype(int)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "ef352b9d",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df.info()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "7c07f152",
+   "metadata": {},
+   "source": [
+    "Looking at the distribution of the CustAccountBalance:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "773b1182",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "plt.scatter(df['CustomerAge'], df['CustAccountBalance'] , c='r', marker = '.', label='4')\n",
+    "\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "d4cf1b67",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df['CustAccountBalance'].describe()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "1a730a1a",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df['Identity'].value_counts()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "288c93d4",
+   "metadata": {},
+   "source": [
+    "## 1.2 Fingerprint hashing\n",
+    "Using the previously selected data with the features you found pertinent, you have to:\n",
+    "\n",
+    "1. Implement your minhash function from scratch. No ready-made hash functions are allowed. Read the class material and search the internet if you need to. For reference, it may be practical to look at the description of hash functions in the book.\n",
+    "\n",
+    "2. Process the dataset and add each record to the MinHash. The subtask's goal is to try and map each consumer to its bin; to ensure this works well, be sure you understand how MinHash works and choose a matching threshold to use. Before moving on, experiment with different thresholds, explaining your choice."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "312cc8f4",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "markdown",
+   "id": "357c769c",
+   "metadata": {},
+   "source": [
+    "## 1.3 Locality Sensitive Hashing\n",
+    "Now that you prepared your algorithm, it's query time!\n",
+    "We have prepared some dummy users for you to work with.\n",
+    "\n",
+    "Download this csv and report the most similar users (comparing them against the dataset provided in Kaggle).\n",
+    "Did your hashing method work properly, what scores have you obtained and how long did it take to run? Provide information and analysis about the results."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3 (ipykernel)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.9.12"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
