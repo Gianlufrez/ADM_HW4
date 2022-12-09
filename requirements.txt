@@ -5,3 +5,6 @@ seaborn
 statistics
 notebook
 tqdm
+pyspark
+findspark
+yellowbrick
