@@ -41,9 +41,9 @@ def centroid_diff(old_centroids, new_centroids):
     new_centroids (np.array) - a numpy array containing centroid coordinates as rows.
 
     :returns
-    a float value that is the difference between the two centroid sets.
+    a float value per centroid that is the difference between the old and new centroid.
     """
-    return np.sum(np.abs(new_centroids - old_centroids))
+    return np.linalg.norm(old_centroids - new_centroids, axis=1) ** 2
 
 
 def kmeans(data, n_clusters, max_iterations, threshold):
@@ -69,7 +69,7 @@ def kmeans(data, n_clusters, max_iterations, threshold):
 
         new_centroids = np.array(new_centroids)
 
-        if centroid_diff(centroids, new_centroids) < threshold:
+        if all(centroid_diff(centroids, new_centroids) < threshold):
             break
 
         centroids = new_centroids
