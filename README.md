@@ -13,3 +13,6 @@ Group Members:
 - `data`: contains files used in the algorithmic question.
 - `docs`: contains files used in documentation.
 - `domain`: a python package containing domain modules.
+
+# Nbviewer
+In case of problems with plots: https://nbviewer.org/github/Gianlufrez/ADM_HW4/blob/main/main.ipynb.
